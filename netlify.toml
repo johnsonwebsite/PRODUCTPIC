@@ -1,0 +1,5 @@
+[[redirects]]
+  # Redirect all /r/shortCode requests to the serverless function
+  from = "/r/*"
+  to = "/.netlify/functions/redirect"
+  status = 200

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale-1.0">
+  <title>Dynamic Links Analytics</title>
+  <!-- Tailwind CSS for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-6">
+  <div class="max-w-6xl mx-auto">
+    <header class="flex items-center justify-between mb-6">
+      <h1 class="text-3xl font-bold text-gray-800">Dynamic Links Analytics</h1>
+      <button onclick="window.history.back()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium">
+        ← Back
+      </button>
+    </header>
+    <p class="text-gray-600 mb-6 max-w-3xl">
+      Explore how your dynamic links are performing. This dashboard shows total scan counts, last scan time, and last scan location per link, captured by the redirect function.
+    </p>
+
+    <!-- Heatmap section -->
+    <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">Heatmap: Last Scan Time Distribution</h2>
+      <p class="text-gray-600 text-sm mb-4">This heatmap shows when your links were last scanned. Darker cells indicate more recent activity. (Each link only records its most recent scan time.)</p>
+      <div id="heatmapContainer" class="overflow-x-auto border border-gray-200 rounded-lg"></div>
+    </div>
+
+    <!-- Chart container -->
+    <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">Scans per Link</h2>
+      <canvas id="clickChart" style="max-height:300px;"></canvas>
+    </div>
+
+    <!-- Table of individual links and metrics -->
+    <div class="bg-white rounded-xl shadow-lg p-6">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">Link Details</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Short URL</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clicks</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Scan</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Scan Location</th>
+            </tr>
+          </thead>
+          <tbody id="linksTableBody" class="bg-white divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart.js library -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // Determine userId from localStorage so we only load analytics for this user
+    const userId = localStorage.getItem('userId') || 'anonymous';
+
+    async function loadLinks() {
+      try {
+        if (!window.storage || !window.storage.list) {
+            console.error("Netlify Blobs 'window.storage' not found. Analytics will not load.");
+            return [];
+        }
+        
+        // Load only this user's links from Netlify Blobs
+        const result = await window.storage.list(`link:${userId}:`);
+        const keys = result && result.keys ? result.keys : [];
+        
+        if (keys.length === 0) {
+            return []; // No links found for this user
+        }
+        
+        const linkPromises = keys.map(key => window.storage.get(key));
+        const linkResults = await Promise.all(linkPromises);
+        const loadedLinks = linkResults
+          .filter(r => r && r.value)
+          .map(r => JSON.parse(r.value));
+          
+        loadedLinks.sort((a, b) => (b.created || 0) - (a.created || 0));
+        return loadedLinks;
+      } catch (err) {
+        console.error('Error loading links:', err);
+        return [];
+      }
+    }
+
+    // Load saved designs to map designId to name for display in analytics
+    async function loadDesigns() {
+      let designs = [];
+      try {
+        if (!window.storage || !window.storage.list) {
+            console.warn("Netlify Blobs 'window.storage' not found. Design names may not load.");
+            return [];
+        }
+        const result = await window.storage.list(`qrDesign:${userId}:`);
+        const keys = result && result.keys ? result.keys : [];
+        const records = await Promise.all(keys.map(k => window.storage.get(k)));
+        designs = records
+          .filter(r => r && r.value)
+          .map(r => JSON.parse(r.value));
+        designs.sort((a, b) => (b.created || 0) - (a.created || 0));
+      } catch (err) {
+        console.warn('Unable to load designs', err);
+      }
+      return designs;
+    }
+
+    function formatDate(timestamp) {
+      if (!timestamp) return 'N/A';
+      const d = new Date(timestamp);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+    }
+
+    async function renderAnalytics() {
+      const [links, designs] = await Promise.all([loadLinks(), loadDesigns()]);
+      
+      // Helper to look up a design name by id
+      const findDesignName = (id) => {
+        if (!id) return 'Default';
+        const d = designs.find(x => x.id === id);
+        return d ? d.name : 'Default';
+      };
+
+      // NEW: Fetch last scan data for all links
+      let lastScans = {};
+      if (window.storage && window.storage.get) {
+          const lastScanPromises = links.map(link => 
+              window.storage.get(`scan:last:${link.shortCode}`)
+                  .catch(e => null) // Ignore errors for individual scans
+          );
+          const lastScanResults = await Promise.all(lastScanPromises);
+          
+          lastScanResults.forEach(result => {
+              if (result && result.value) {
+                  try {
+                      const scan = JSON.parse(result.value);
+                      lastScans[scan.slug] = scan;
+                  } catch (e) {
+                      console.warn("Failed to parse scan data", e);
+                  }
+              }
+          });
+      }
+
+      // Populate table
+      const tbody = document.getElementById('linksTableBody');
+      tbody.innerHTML = '';
+      links.forEach(link => {
+        const tr = document.createElement('tr');
+        const title = link.title || `/r/${link.shortCode}`;
+        
+        // NEW: Get last scan location and time
+        const lastScan = lastScans[link.shortCode];
+        let location = "N/A";
+        if (lastScan && lastScan.geo) {
+            location = [lastScan.geo.city, lastScan.geo.state, lastScan.geo.country]
+                        .filter(v => v && v !== "Unknown").join(', ');
+            if (!location) location = "Unknown";
+        }
+        // Use lastScan.ts if available, otherwise fall back to link.updated
+        const lastScanTime = lastScan ? lastScan.ts : link.updated;
+
+        tr.innerHTML = `
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-700">${title}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-indigo-600"><a href="/r/${link.shortCode}" target="_blank">/r/${link.shortCode}</a></td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-700 truncate" title="${link.destination}">${link.destination}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-700">${link.clicks || 0}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDate(lastScanTime)}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${location}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      
+      // Chart data
+      const labels = links.map(l => l.title || `/r/${l.shortCode}`);
+      const clicks = links.map(l => l.clicks || 0);
+      
+      try {
+        // Destroy existing chart if any
+        if (window.clickChart) {
+          window.clickChart.destroy();
+        }
+        const ctx = document.getElementById('clickChart').getContext('2d');
+        window.clickChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Total Scans',
+              data: clicks,
+              backgroundColor: 'rgba(79, 70, 229, 0.5)',
+              borderColor: 'rgba(79, 70, 229, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              x: {
+                ticks: { color: '#374151' },
+                grid: { display: false }
+              },
+              y: {
+                beginAtZero: true,
+                ticks: { color: '#374151', stepSize: 1 },
+                grid: { color: '#e5e7eb' }
+              }
+            },
+            plugins: {
+              legend: {
+                labels: { color: '#374151' }
+              }
+            }
+          }
+        });
+      } catch (chartErr) {
+        console.warn('Chart.js failed to render:', chartErr);
+      } 
+      
+      // Render heatmap using last scan timestamps
+      renderHeatmap(Object.values(lastScans));
+    }
+
+    document.addEventListener('DOMContentLoaded', renderAnalytics);
+
+    /**
+     * Build a simple heatmap of last scan times.
+     * @param {Array} scanEvents - An array of the *last* scan event objects
+     */
+    function renderHeatmap(scanEvents) {
+      const container = document.getElementById('heatmapContainer');
+      container.innerHTML = '';
+      // Build a 2D array [day][hour] counts
+      const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+      
+      scanEvents.forEach(scan => {
+        if (scan.ts) {
+          const date = new Date(scan.ts);
+          const day = date.getDay(); // 0 = Sunday
+          const hour = date.getHours();
+          grid[day][hour] += 1;
+        }
+      });
+      
+      // Determine max count for color scaling
+      let maxCount = 0;
+      grid.forEach(row => row.forEach(val => { if (val > maxCount) maxCount = val; }));
+      
+      // Day names
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      // Create a table
+      const table = document.createElement('table');
+      table.className = 'table-fixed border-collapse';
+      // Header row for hours
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      const emptyHead = document.createElement('th');
+      emptyHead.className = 'sticky left-0 z-10 bg-white p-1';
+      emptyHead.textContent = '';
+      headRow.appendChild(emptyHead);
+      for (let h = 0; h < 24; h++) {
+        const th = document.createElement('th');
+        th.className = 'px-1 py-1 text-xs font-medium text-gray-500';
+        th.textContent = h;
+        headRow.appendChild(th);
+      }
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      // Body rows
+      const tbody = document.createElement('tbody');
+      grid.forEach((row, d) => {
+        const tr = document.createElement('tr');
+        const dayCell = document.createElement('th');
+        dayCell.className = 'sticky left-0 px-2 py-1 text-xs font-medium text-gray-500 bg-white z-10';
+        dayCell.textContent = dayNames[d];
+        tr.appendChild(dayCell);
+        row.forEach(val => {
+          const td = document.createElement('td');
+          // Provide a small border so the grid is visible
+          td.className = 'w-6 h-6 text-center text-xs border border-gray-200 text-white';
+          const alpha = maxCount === 0 ? 0 : val / maxCount;
+          // Use indigo color with varying opacity
+          td.style.backgroundColor = `rgba(79, 70, 229, ${alpha})`;
+          td.title = val + ' link' + (val === 1 ? '' : 's') + ' last scanned in this hour.';
+          if (val > 0) {
+            td.textContent = val;
+          }
+          if (alpha < 0.4) {
+            td.style.color = '#374151'; // Dark text for light cells
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      container.appendChild(table);
+    }
+  </script>
+</body>
+</html>

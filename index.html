@@ -1,0 +1,2254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>ProductPic QR Maker</title>
+    
+    <!-- 1. Include Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. QR Code Styling Library -->
+    <script src="https://unpkg.com/qr-code-styling@1.5.0/lib/qr-code-styling.js"></script>
+
+    <!-- 3. Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Lora:wght@700&display=swap" rel="stylesheet">
+
+    <!-- 4. Combined Styles -->
+    <style>
+        :root{
+          /* wider on desktop, balanced on mobile */
+          --aside-width: 320px;
+        }
+        @media (max-width: 1024px){ :root{ --aside-width: 280px; } }
+        @media (max-width: 640px){ :root{ --aside-width: 55vw; } } /* Adjusted for mobile */
+
+        /* Using Inter as the base, Lora for headlines */
+        body {
+            font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            /* Dark background from QR maker */
+            background-color: #0f172a; 
+            color: #fff;
+            antialiased: true;
+        }
+        .font-lora{font-family:'Lora',serif}
+        .subtle{color:#94a3b8}
+
+        #split-root{
+          position: relative; /* Stacking context for elements on top of the hero */
+          z-index: 1;
+        }
+
+        /* Scroll behavior for the sidebar */
+        .swipe-scroll{overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain}
+
+        /* Collapsible input panels */
+        .input-panel{max-height:0; opacity:0; overflow:hidden; transition:max-height .22s ease, opacity .22s ease, padding .22s ease}
+        .input-panel.open{opacity:1; max-height:520px; padding:.25rem .5rem .5rem}
+
+        /* Tab button look + collapsed effect */
+        .tabbtn{display:flex;align-items:center;gap:.5rem;justify-content:center;transition:all .2s ease}
+        .tabbtn.collapsed{opacity:0; max-height:0; padding-top:0; padding-bottom:0; margin:0; overflow:hidden; pointer-events:none}
+
+        /* Editable label */
+        [contenteditable="true"]{outline:2px dashed #38bdf8;border-radius:6px;white-space:pre-wrap}
+
+        /* Modals */
+        .modal-base {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .18s ease;
+            position: fixed;
+            z-index: 100;
+        }
+        .modal-base.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        /* --- New Styles for Collapsible Sidebar --- */
+        #sidebar-toggle-btn {
+          position: fixed;
+          top: 1rem;
+          right: 1.25rem;
+          z-index: 50;
+          cursor: pointer;
+          background-color: rgba(30, 41, 59, 0.75);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1px solid #334155;
+          width: 3rem;
+          height: 3rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 9999px; /* circular */
+          transition: all 0.2s ease-in-out;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2), 0 2px 4px -1px rgba(0,0,0,0.12);
+        }
+        #sidebar-toggle-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1);
+          border-color: #4b5563;
+        }
+        
+        #sidebar-toggle-btn.open #open-icon { display: none; }
+        #sidebar-toggle-btn.open #close-icon { display: block; }
+        #sidebar-toggle-btn #close-icon { display: none; }
+
+        aside {
+          position: fixed;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: var(--aside-width);
+          max-width: 100%;
+          transform: translateX(100%);
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          z-index: 40;
+          background-color: #1e293b;
+          border-left: 1px solid #334155;
+        }
+        aside.open {
+          transform: translateX(0);
+          box-shadow: -10px 0 25px -5px rgba(0,0,0,0.3);
+        }
+        
+        /* --- Hero Image & Animation Styles --- */
+        @keyframes pulse-hero {
+          0%, 100% {
+            opacity: 0.8;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.5;
+            transform: scale(1.03);
+          }
+        }
+        #hero-image {
+          position: fixed;
+          inset: 0;
+          width: 100vw;
+          height: 100vh;
+          object-fit: cover;
+          z-index: 0;
+          animation: pulse-hero 8s ease-in-out infinite;
+          /* Use a placeholder if hero.png fails */
+          background-color: #0f172a; 
+        }
+        #hero-wrapper {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            perspective: 1000px; /* For the 3D tilt effect */
+        }
+        #marketing-blurb, #qrcode-frame-wrapper {
+          position: relative;
+          z-index: 2;
+          transition: transform 0.1s ease-out; /* Smooths out the tilt effect */
+        }
+
+        /* Mobile view adjustments for sidebar */
+        @media (max-width: 640px) {
+          #preview-area {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+          body.sidebar-open #preview-area {
+            transform: translateX(calc(var(--aside-width) * -0.68)) scale(0.75);
+          }
+        }
+        
+        /* Custom Social Platform List */
+        #social-platforms-container .social-platform-item button {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          width: 100%;
+          padding: 0.5rem 0.75rem;
+          border-radius: 0.375rem;
+          transition: background-color 0.2s ease-in-out;
+          background-color: #334155; /* slate-700 */
+        }
+        #social-platforms-container .social-platform-item button:hover {
+          background-color: #475569; /* slate-600 */
+        }
+        #social-platforms-container .social-platform-item button.active {
+          background-color: #4f46e5; /* indigo-600 */
+          font-weight: 600;
+        }
+        .social-input-wrapper {
+          max-height: 0;
+          overflow: hidden;
+          transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+          padding: 0 0.5rem;
+        }
+        .social-input-wrapper.open {
+          max-height: 100px;
+          padding: 0.5rem 0.5rem 0.25rem;
+        }
+        .social-input-wrapper input {
+          width: 100%;
+          background-color: #1e293b; /* slate-800 */
+          border: 1px solid #475569; /* slate-600 */
+          border-radius: 0.375rem;
+          padding: 0.5rem 0.75rem;
+        }
+        .social-input-wrapper input:focus {
+          outline: 2px solid #6366f1; /* indigo-500 */
+          border-color: transparent;
+        }
+    </style>
+
+    <!-- 5. PWA Manifest and external libraries -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Libraries for batch generation and downloads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+
+    <!-- 
+      Auth Screen: Shown by default when logged out.
+      This is from the original index.html, centered on the page.
+    -->
+    <div id="auth-screen" class="min-h-screen flex items-center justify-center">
+        <div class="w-full max-w-md">
+            <div class="bg-white p-8 rounded-lg shadow-xl">
+                <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">ProductPic</h2>
+                
+                <!-- Tab Navigation -->
+                <div class="flex border-b mb-6">
+                    <button id="sign-in-tab" class="flex-1 py-2 text-center font-semibold text-blue-600 border-b-2 border-blue-600 focus:outline-none">
+                        Sign In
+                    </button>
+                    <button id="sign-up-tab" class="flex-1 py-2 text-center font-semibold text-gray-500 focus:outline-none">
+                        Sign Up
+                    </button>
+                </div>
+
+                <!-- Sign In Form -->
+                <form id="sign-in-form" class="space-y-4">
+                    <div>
+                        <label for="sign-in-email" class="block text-sm font-medium text-gray-700">Email</label>
+                        <input type="email" id="sign-in-email" placeholder="you@example.com" required
+                               class="text-gray-900 mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="sign-in-password" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="sign-in-password" placeholder="••••••••" required
+                               class="text-gray-900 mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <button type="submit"
+                            class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                        Sign In
+                    </button>
+                </form>
+
+                <!-- Sign Up Form (hidden by default) -->
+                <form id="sign-up-form" class="hidden space-y-4">
+                    <div>
+                        <label for="sign-up-email" class="block text-sm font-medium text-gray-700">Email</label>
+                        <input type="email" id="sign-up-email" placeholder="you@example.com" required
+                               class="text-gray-900 mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="sign-up-password" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="sign-up-password" placeholder="Must be at least 6 characters" required
+                               class="text-gray-900 mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <button type="submit"
+                            class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                        Create Account
+                    </button>
+                </form>
+
+                <!-- Error Message Area -->
+                <p id="auth-error-message" class="text-red-500 text-sm text-center mt-4"></p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 
+      QR Maker Screen: Shown when logged in.
+      This is the content from index2.html, wrapped in a hidden div.
+    -->
+    <div id="qr-maker-screen" class="hidden">
+        <!-- Use a local hero image placeholder that can be replaced by the user later -->
+        <img id="hero-image" src="herologin.png" alt="Hero background" onerror="this.style.display='none'">
+        <div id="split-root">
+          <!-- PREVIEW AREA (now fills the page) -->
+          <section id="preview-area" class="h-full min-h-screen overflow-y-auto flex flex-col items-center justify-start sm:justify-center px-3 sm:px-6 py-3">
+            <div id="hero-wrapper">
+              <!-- Marketing blurb -->
+              <div id="marketing-blurb" class="mb-3 sm:mb-4 text-center max-w-[90vw]">
+                <div id="marketing-headline" class="text-sm sm:text-base font-semibold text-slate-200"></div>
+                <div id="marketing-copy" class="text-[11px] sm:text-xs text-slate-400"></div>
+              </div>
+
+              <!-- Tight-fit card that never distorts -->
+              <div id="qrcode-frame-wrapper" class="inline-flex cursor-pointer rounded-xl p-3 sm:p-5 items-center justify-center gap-3 transition-all duration-300 border-4 border-transparent bg-slate-800 shadow-lg">
+                <div class="flex flex-col items-center">
+                  <p id="frame-text-element" class="font-bold text-center" contenteditable="false" style="font-size:18px;"></p>
+                  <div id="qrcode-container" class="bg-white rounded-lg shadow mx-auto"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- WIDGET BUTTON to toggle the dashboard -->
+          <div id="sidebar-toggle-btn">
+            <span id="open-icon" class="font-extrabold text-sm">QR</span>
+            <span id="close-icon" class="hidden text-2xl leading-none">×</span>
+          </div>
+          
+          <!-- SIDEBAR (dashboard) -->
+          <aside class="swipe-scroll h-full">
+            <!-- NEW USER CONTROLS SECTION -->
+            <div class="p-3 space-y-2 bg-slate-900 border-b border-slate-700/60 sticky top-0 z-10">
+                <p class="text-sm text-slate-300 truncate">
+                    Welcome, <span id="user-email-display" class="font-semibold"></span>!
+                </p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="save-code-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-2 rounded-md text-xs transition">Save Design</button>
+                    <button id="saved-designs-btn" class="w-full bg-slate-600 hover:bg-slate-700 text-white font-semibold py-2 px-2 rounded-md text-xs transition">Load Saved</button>
+                </div>
+                <!-- Additional state controls -->
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <button id="save-state-btn" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 px-2 rounded-md text-xs transition">Save Progress</button>
+                    <label for="load-state-input" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2 px-2 rounded-md text-xs transition text-center cursor-pointer">
+                        Start Where I Left Off
+                        <input type="file" id="load-state-input" class="hidden" accept=".json">
+                    </label>
+                </div>
+                <!-- Analytics button removed per user request -->
+                <button id="sign-out-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-2 rounded-md text-xs transition mt-2">Sign Out</button>
+            </div>
+            
+            <!-- Original Sidebar Content (padding top reduced) -->
+            <div class="space-y-3 px-2 sm:px-3 pt-4 pb-3"> <!-- Changed pt-20 to pt-4 -->
+              <!-- Tabs + Inputs -->
+              <section class="border border-slate-700/50 rounded-md bg-slate-800/60">
+                <div class="p-1 space-y-1" id="tabs-root"></div>
+              </section>
+
+              <!-- Logo controls -->
+              <section class="space-y-2 pt-3 border-t border-slate-700/60">
+                <label class="block text-sm font-medium text-slate-300">Logo (Optional)</label>
+                <div class="flex items-center gap-2">
+                  <label for="qr-logo-upload" class="flex-1 cursor-pointer bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-2 px-2 rounded-md text-center text-xs sm:text-sm transition">
+                    ⬆️ Upload Logo <input type="file" id="qr-logo-upload" class="hidden" accept="image/*">
+                  </label>
+                  <div id="logo-preview-container" class="hidden items-center gap-2">
+                    <img id="logo-preview-img" src="" class="w-8 h-8 object-contain rounded bg-white p-1">
+                    <button id="remove-logo-btn" class="text-slate-400 hover:text-red-400 transition p-1 rounded">✖</button>
+                  </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-[11px] sm:text-xs">
+                  <div>
+                    <label class="block mb-1">Logo Size</label>
+                    <select id="logo-size" class="w-full bg-slate-700 border border-slate-600 rounded-md px-2 py-1">
+                      <option value="0.18">Small</option>
+                      <option value="0.22" selected>Medium</option>
+                      <option value="0.26">Large</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block mb-1">Logo Margin</label>
+                    <select id="logo-margin" class="w-full bg-slate-700 border border-slate-600 rounded-md px-2 py-1">
+                      <option value="2">Tight</option>
+                      <option value="4" selected>Normal</option>
+                      <option value="6">Roomy</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block mb-1">Logo Shape</label>
+                    <select id="logo-shape" class="w-full bg-slate-700 border border-slate-600 rounded-md px-2 py-1">
+                      <option value="square" selected>Square</option>
+                      <option value="circle">Rounded</option>
+                    </select>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Style -->
+              <section class="space-y-3 pt-3 border-t border-slate-700/60">
+                <div>
+                  <label class="block text-sm font-medium text-slate-300 mb-1">Corner Style</label>
+                  <select id="corner-style-select" class="w-full bg-slate-700 border border-slate-600 rounded-md px-2 py-2 text-xs sm:text-sm">
+                    <option value="square">◼️ Square</option>
+                    <option value="dot">⚫ Dots</option>
+                    <option value="rounded">🔵 Rounded</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-slate-300">QR Code Color</label>
+                  <input type="color" id="qr-color-picker" value="#000000" class="w-full h-9 bg-slate-700 border border-slate-600 rounded-md p-1">
+                  <p id="color-warning" class="text-[11px] text-red-400 hidden mt-1">Too light — scanning may fail.</p>
+                </div>
+
+                <!-- Gradient color pickers for dots -->
+                <div id="gradient-container" class="mt-3 space-y-1">
+                  <label class="block text-sm font-medium text-slate-300">Gradient Colors (dots)</label>
+                  <div class="grid grid-cols-2 gap-2">
+                    <input type="color" id="gradient-start-color" value="#000000" class="w-full h-8 bg-slate-700 border border-slate-600 rounded-md p-1">
+                    <input type="color" id="gradient-end-color" value="#6366f1" class="w-full h-8 bg-slate-700 border border-slate-600 rounded-md p-1">
+                  </div>
+                  <p class="text-[10px] text-slate-500">Leave both the same for a solid color.</p>
+                </div>
+
+                <!-- Eye styling controls -->
+                <div id="eye-style-container" class="mt-3 pt-3 border-t border-slate-700/60 space-y-1">
+                  <label class="block text-sm font-medium text-slate-300">Corner Eye Styling</label>
+                  <div class="grid grid-cols-3 gap-2">
+                    <select id="eye-shape-select" class="w-full bg-slate-700 border border-slate-600 rounded-md px-2 py-1 text-xs sm:text-sm">
+                      <option value="square">◼️ Square</option>
+                      <option value="dot">⚫ Dot</option>
+                      <option value="rounded">🔵 Rounded</option>
+                    </select>
+                    <input type="color" id="eye-color-outer" value="#000000" class="w-full h-8 bg-slate-700 border border-slate-600 rounded-md p-1">
+                    <input type="color" id="eye-color-inner" value="#000000" class="w-full h-8 bg-slate-700 border border-slate-600 rounded-md p-1">
+                  </div>
+                  <p class="text-[10px] text-slate-500">Outer & inner colors for the corner squares.</p>
+                </div>
+
+                <!-- Brand Kit Save and Swatches -->
+                <div id="brand-kit-container" class="mt-3 pt-3 border-t border-slate-700/60 space-y-2">
+                  <button id="save-brand-btn" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2 px-2 rounded-md text-xs transition">Save Brand</button>
+                  <div id="brand-swatches" class="flex flex-wrap gap-2"></div>
+                  <p class="text-[10px] text-slate-500">Click a swatch to apply saved colors and logo.</p>
+                </div>
+              </section>
+
+              <!-- Frames quick + modal trigger -->
+              <section class="space-y-2 pt-3 border-t border-slate-700/60">
+                <div class="flex items-center justify-between">
+                  <h3 class="font-semibold text-sm">Frames</h3>
+                  <div class="flex items-center gap-2">
+                    <button id="open-frame-modal-btn" class="text-[11px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded">More…</button>
+                    <button id="toggle-edit-text-btn" class="text-[11px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded">Edit Label</button>
+                  </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <button class="frame-quick bg-slate-700 hover:bg-slate-600 rounded p-2 text-[11px]" data-frame="none">🚫 None</button>
+                  <button class="frame-quick bg-slate-700 hover:bg-slate-600 rounded p-2 text-[11px]" data-frame="scan-me">👇 Scan Me</button>
+                  <button class="frame-quick bg-slate-700 hover:bg-slate-600 rounded p-2 text-[11px]" data-frame="elegant">🍷 Gourmet</button>
+                  <button class="frame-quick bg-slate-700 hover:bg-slate-600 rounded p-2 text-[11px]" data-frame="wifi-access">📶 WiFi</button>
+                  <button class="frame-quick bg-slate-700 hover:bg-slate-600 rounded p-2 text-[11px]" data-frame="follow-us">👍 Follow</button>
+                  <button class="frame-quick bg-slate-700 hover:bg-slate-600 rounded p-2 text-[11px]" data-frame="vip-club">👑 VIP</button>
+                </div>
+                <div class="pt-2 mt-2 border-t border-slate-700/60">
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Custom Frame Colors</label>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label class="block text-[11px] text-slate-400">Background</label>
+                        <input type="color" id="frame-bg-color" value="#1e293b" class="w-full h-8 bg-slate-700 border border-slate-600 rounded-md p-1">
+                      </div>
+                      <div>
+                        <label class="block text-[11px] text-slate-400">Border & Text</label>
+                        <input type="color" id="frame-border-color" value="#e2e8f0" class="w-full h-8 bg-slate-700 border border-slate-600 rounded-md p-1">
+                      </div>
+                    </div>
+                </div>
+
+                <!-- Frame background image upload -->
+                <div class="pt-2 mt-2 border-t border-slate-700/60">
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Frame Background Image</label>
+                    <label for="frame-bg-image-input" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-2 px-2 rounded-md text-xs sm:text-sm transition text-center cursor-pointer">Upload Image
+                        <input type="file" id="frame-bg-image-input" class="hidden" accept="image/*">
+                    </label>
+                    <p class="text-[10px] text-slate-500 mt-1">Background image appears behind the QR code frame.</p>
+                </div>
+              </section>
+
+              <!-- Export -->
+              <section class="space-y-2 pt-3 border-t border-slate-700/60 pb-24">
+                <label class="block text-sm font-medium text-slate-300">Export</label>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <select id="png-scale-select" class="w-full bg-slate-700 border border-slate-600 rounded-md px-2 py-2 text-xs sm:text-sm">
+                      <option value="2">PNG (Web - 512px)</option>
+                      <option value="4">PNG (Print - 1024px)</option>
+                      <option value="8">PNG (High‑Res - 2048px)</option>
+                    </select>
+                    <button id="download-qr-png-btn" class="w-full mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-2 rounded-md text-xs transition">Download PNG</button>
+                  </div>
+                  <div>
+                    <button id="download-qr-svg-btn" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2 px-2 rounded-md text-xs transition">Download SVG</button>
+                    <p class="text-[10px] text-slate-400 mt-1 text-center">Best for print.</p>
+                  </div>
+                </div>
+                <button id="preview-mockup-btn" class="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-semibold py-2 px-2 rounded-md text-xs transition mt-4">Preview on Mockup</button>
+              </section>
+            </div>
+          </aside>
+        </div>
+
+        <!-- Frame modal -->
+        <div id="frame-modal" class="modal-base bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-sm border border-slate-700 rounded-xl shadow-2xl p-4 w-11/12 max-w-xl">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="font-bold text-slate-200">Select a Frame</h3>
+            <button id="close-frame-modal-btn" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          </div>
+          <div class="flex gap-2 mb-3 border-b border-slate-700">
+            <button id="standard-frames-btn" class="py-2 px-3 text-sm text-white border-b-2 border-indigo-500">Standard</button>
+            <button id="holiday-frames-btn" class="py-2 px-3 text-sm text-slate-400 border-b-2 border-transparent hover:text-white">Holidays</button>
+          </div>
+          <div id="frame-options-container" class="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-80 overflow-y-auto"></div>
+        </div>
+
+        <!-- NEW: Save Design Modal -->
+        <div id="save-design-modal" class="modal-base inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
+            <div class="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 w-11/12 max-w-sm">
+                <h3 class="font-bold text-lg text-slate-200 mb-4">Save Design</h3>
+                <p class="text-sm text-slate-400 mb-2">Enter a name for this design:</p>
+                <input type="text" id="save-design-name" class="w-full bg-slate-700 text-white rounded-md px-3 py-2 border border-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., Main Website QR">
+                <div class="flex gap-2 mt-5">
+                    <button id="modal-cancel-save-btn" class="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-semibold py-2 px-3 rounded-md text-sm transition">Cancel</button>
+                    <button id="modal-skip-save-btn" class="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-semibold py-2 px-3 rounded-md text-sm transition">Just Download</button>
+                    <button id="modal-save-btn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-3 rounded-md text-sm transition">Save & Download</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- NEW: Saved Designs List Modal -->
+        <div id="saved-designs-modal" class="modal-base inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
+            <div class="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 w-11/12 max-w-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-lg text-slate-200">Load Saved Design</h3>
+                    <button id="close-saved-list-btn" class="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+                <div id="saved-designs-list" class="max-h-80 overflow-y-auto space-y-2">
+                    <!-- Saved items will be injected here -->
+                    <p class="text-slate-400 text-sm text-center">No saved designs found.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Mockup Preview Modal -->
+        <div id="mockup-modal" class="modal-base inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
+          <div class="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-4 w-11/12 max-w-4xl">
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-bold text-lg text-slate-200">Mockup Preview</h3>
+              <button id="close-mockup-modal-btn" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              <div class="relative overflow-hidden rounded-lg"><img src="file-card.png" class="w-full rounded-md"><img id="mockup-img-card" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style="width:40%;" /></div>
+              <div class="relative overflow-hidden rounded-lg"><img src="file-poster.png" class="w-full rounded-md"><img id="mockup-img-poster" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style="width:40%;" /></div>
+              <div class="relative overflow-hidden rounded-lg"><img src="file-phone.png" class="w-full rounded-md"><img id="mockup-img-phone" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style="width:40%;" /></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loader -->
+        <div id="loader-overlay" class="hidden fixed inset-0 flex flex-col items-center justify-center gap-3 bg-slate-900/80 backdrop-blur-md z-[9999]">
+          <div class="w-9 h-9 rounded-full border-4 border-white/30 border-t-white animate-spin"></div>
+          <div class="text-sm">Generating…</div>
+        </div>
+
+        <!-- Toast -->
+        <div id="toast" class="fixed left-1/2 -translate-x-1/2 bottom-5 bg-slate-800 text-white text-xs px-3 py-2 rounded shadow-lg hidden z-[9999]"></div>
+    </div>
+    
+
+    <!-- 5. Include Firebase JS SDKs -->
+    <script type="module">
+        // Import functions from the Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            onAuthStateChanged, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword, 
+            signOut 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // 6. Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBhf8gQuPkxaPnG4HGLN5hYRGYwyvc6JJY",
+            authDomain: "productpic-27d3b.firebaseapp.com",
+            projectId: "productpic-27d3b",
+            storageBucket: "productpic-27d3b.appspot.com",
+            messagingSenderId: "783549373571"
+        };
+
+        // 7. Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        // 8. Get DOM Elements for Auth
+        const authScreen = document.getElementById('auth-screen');
+        const qrMakerScreen = document.getElementById('qr-maker-screen');
+        
+        const signInTab = document.getElementById('sign-in-tab');
+        const signUpTab = document.getElementById('sign-up-tab');
+        
+        const signInForm = document.getElementById('sign-in-form');
+        const signUpForm = document.getElementById('sign-up-form');
+        
+        const signInEmail = document.getElementById('sign-in-email');
+        const signInPassword = document.getElementById('sign-in-password');
+        
+        const signUpEmail = document.getElementById('sign-up-email');
+        const signUpPassword = document.getElementById('sign-up-password');
+        
+        const authErrorMessage = document.getElementById('auth-error-message');
+        
+        const userEmailDisplay = document.getElementById('user-email-display');
+        // Note: The sign-out button is inside the QR maker, 
+        // so it will be initialized in initializeQrMaker()
+
+        // 9. Auth Tab Switching Logic
+        signInTab.addEventListener('click', () => {
+            signInTab.classList.add('text-blue-600', 'border-blue-600');
+            signInTab.classList.remove('text-gray-500');
+            
+            signUpTab.classList.add('text-gray-500');
+            signUpTab.classList.remove('text-blue-600', 'border-blue-600');
+
+            signInForm.classList.remove('hidden');
+            signUpForm.classList.add('hidden');
+            authErrorMessage.textContent = ''; // Clear errors
+        });
+
+        signUpTab.addEventListener('click', () => {
+            signUpTab.classList.add('text-blue-600', 'border-blue-600');
+            signUpTab.classList.remove('text-gray-500');
+            
+            signInTab.classList.add('text-gray-500');
+            signInTab.classList.remove('text-blue-600', 'border-blue-600');
+
+            signUpForm.classList.remove('hidden');
+            signInForm.classList.add('hidden');
+            authErrorMessage.textContent = ''; // Clear errors
+        });
+
+        // 10. Firebase Auth Logic (Sign Up/In)
+
+        // --- Sign Up ---
+        signUpForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); 
+            authErrorMessage.textContent = ''; 
+            const email = signUpEmail.value;
+            const password = signUpPassword.value;
+
+            try {
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                console.log('User signed up:', userCredential.user);
+                // Persist the user ID in localStorage so other pages (like dynamic links/analytics)
+                // can access it without re‑initializing Firebase. Storing this here makes it
+                // available to vanilla scripts on secondary pages that don't import Firebase.
+                try {
+                    localStorage.setItem('userId', userCredential.user.uid);
+                } catch (err) {
+                    console.warn('Unable to persist userId:', err);
+                }
+            } catch (error) {
+                console.error('Sign up error:', error.message);
+                authErrorMessage.textContent = error.message;
+            }
+        });
+
+        // --- Sign In ---
+        signInForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            authErrorMessage.textContent = '';
+            const email = signInEmail.value;
+            const password = signInPassword.value;
+
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                console.log('User signed in:', userCredential.user);
+                // Persist user ID for access on other pages
+                try {
+                    localStorage.setItem('userId', userCredential.user.uid);
+                } catch (err) {
+                    console.warn('Unable to persist userId:', err);
+                }
+            } catch (error) {
+                console.error('Sign in error:', error.message);
+                authErrorMessage.textContent = error.message;
+            }
+        });
+
+        // 11. Auth State Listener (Main Controller)
+        let isQrMakerInitialized = false;
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // User is signed in
+                console.log('Auth state changed: User is IN', user.email);
+                
+                qrMakerScreen.classList.remove('hidden');
+                authScreen.classList.add('hidden');
+                userEmailDisplay.textContent = user.email; // Update email in sidebar
+                
+                // Clear auth form fields
+                signInEmail.value = '';
+                signInPassword.value = '';
+                signUpEmail.value = '';
+                signUpPassword.value = '';
+
+                // Initialize the QR maker logic ONLY ONCE
+                if (!isQrMakerInitialized) {
+                    initializeQrMaker();
+                    isQrMakerInitialized = true;
+                }
+
+            } else {
+                // User is signed out
+                console.log('Auth state changed: User is OUT');
+                
+                qrMakerScreen.classList.add('hidden');
+                authScreen.classList.remove('hidden');
+                userEmailDisplay.textContent = '';
+            }
+        });
+
+        // Register service worker for PWA functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js').catch((err) => {
+                    console.warn('Service worker registration failed:', err);
+                });
+            });
+        }
+
+        // 12. QR MAKER LOGIC
+        // All logic from index2.html is wrapped in this function
+        function initializeQrMaker() {
+            /* ------------ Frame presets ------------ */
+            const frameCollections = {
+              standard: [
+                { id: 'none', text: 'No Frame', isLabel: true, style: { icon: '🚫', borderColor: 'transparent', backgroundColor: 'transparent' } },
+                { id: 'simple', text: 'Simple', isLabel: true, style: { icon: '🖼️', borderColor: '#e2e8f0', backgroundColor: '#1e293b' } },
+                { id: 'scan-menu', text: 'Scan Menu', style: { icon: '🍽️', borderColor: '#14b8a6', backgroundColor: '#0f172a', textColor: '#2dd4bf' } },
+                { id: 'scan-order', text: 'Scan to Order', style: { icon: '🛒', borderColor: '#f97316', backgroundColor: '#291d14', textColor: '#f97316' } },
+                { id: 'scan-me', text: 'Scan Me', style: { icon: '👇', borderColor: '#64748b', backgroundColor: '#1e293b', textColor: '#e2e8f0' } },
+                { id: 'elegant', text: 'The Gourmet', style: { icon: '🍷', borderColor: '#d4af37', backgroundColor: '#1C1C1C', textColor: '#d4af37', fontFamily: 'font-lora', borderWidth: '2px' } },
+                { id: 'wifi-access', text: 'Free WiFi', style: { icon: '📶', borderColor: '#0ea5e9', backgroundColor: '#0c4a6e', textColor: '#0ea5e9' } },
+                { id: 'follow-us', text: 'Follow Us', style: { icon: '👍', borderColor: '#8b5cf6', backgroundColor: '#281c46', textColor: '#a78bfa' } },
+                { id: 'leave-review', text: 'Leave a Review', style: { icon: '⭐', borderColor: '#3b82f6', backgroundColor: '#1e293b', textColor: '#60a5fa' } },
+                { id: 'contact-us', text: 'Contact Us', style: { icon: '📞', borderColor: '#65a30d', backgroundColor: '#1a2e05', textColor: '#65a30d' } },
+                { id: 'vip-club', text: 'Join VIP Club', style: { icon: '👑', borderColor: '#ef4444', backgroundColor: '#450a0a', textColor: '#ef4444' } },
+              ],
+              holiday: [
+                { id: 'happy-birthday', text: 'Happy Birthday', style: { icon: '🎂', borderColor: '#fbcfe8', backgroundColor: '#86198f', textColor: '#fbcfe8', fontFamily: 'font-lora' } },
+                { id: 'merry-christmas', text: 'Merry Christmas', style: { icon: '🎄', borderColor: '#4ade80', backgroundColor: '#b91c1c', textColor: '#f0fdf4' } },
+                { id: 'happy-new-year', text: 'Happy New Year', style: { icon: '🎉', borderColor: '#facc15', backgroundColor: '#171717', textColor: '#fde047' } },
+                { id: 'happy-halloween', text: 'Happy Halloween', style: { icon: '🎃', borderColor: '#fb923c', backgroundColor: '#431407', textColor: '#fdba74' } },
+                { id: 'happy-valentines', text: "Be Mine", style: { icon: '❤️', borderColor: '#fda4af', backgroundColor: '#be123c', textColor: '#ffe4e6' } },
+              ]
+            };
+
+            /* ------------ Tab definitions (UTM tab modified) ------------ */
+            const tabs = [
+              { id:'url',    label:'🔗 URL/Text', inputs:`<input id="qr-text" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="https://example.com">` },
+              { id:'wifi',   label:'📶 WiFi', inputs:`<div class="grid grid-cols-2 gap-2"><input id="wifi-ssid" type="text" class="col-span-2 w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Network Name (SSID)"><select id="wifi-security" class="w-full bg-slate-700 rounded-md px-3 py-2"><option value="WPA">WPA/WPA2</option><option value="WEP">WEP</option><option value="nopass">None</option></select><input id="wifi-password" type="password" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Password"></div>` },
+              { id:'maps',   label:'📍 Maps', inputs:`<input id="maps-query" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="123 Main St, Lexington, KY"><div id="maps-preview-wrapper" class="text-center mt-2 hidden"><a id="maps-preview-link" href="#" target="_blank" class="text-xs text-sky-400 hover:underline">Test Address</a></div>` },
+              { id:'phone',  label:'📞 Phone', inputs:`<input id="phone-number" type="tel" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="+15555555555">` },
+              { id:'sms',    label:'✉️ SMS', inputs:`<div class="space-y-2"><input id="sms-number" type="tel" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Phone Number"><textarea id="sms-message" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Message"></textarea><div id="sms-preview-wrapper" class="text-xs text-slate-400 space-y-1 hidden"><p>Preview:</p><div id="sms-preview" class="bg-slate-800 p-2 rounded"></div></div><p class="text-[10px] text-slate-500 pt-1">Note: Message pre-fill support varies by device and app.</p></div>` },
+              { id:'vcard',  label:'🪪 vCard', inputs:`<div class="space-y-2"><input id="vcard-name" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Full Name"><input id="vcard-phone" type="tel" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Phone"><input id="vcard-email" type="email" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Email"><input id="vcard-title" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Job Title"><input id="vcard-org" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Organization"><input id="vcard-website" type="url" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Website"><input id="vcard-address" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Address"></div>` },
+              { id:'email',  label:'📬 Email Contact', inputs:`<div class="space-y-2"><p class="text-[11px] text-slate-400">Use an email address to create a 'mailto' link, or a URL to a web form.</p><input id="email-address" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="contact@brand.com OR https://mysite.com/join"></div>` },
+              { id:'social', label:'📣 Social Link', inputs:`<div id="social-platforms-container" class="space-y-1.5"></div>` },
+              { id:'event',  label:'📅 Event', inputs:`<div class="space-y-2"><input id="event-title" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Event Title"><input id="event-location" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Location"><div class="grid grid-cols-2 gap-2"><input id="event-start" type="datetime-local" class="w-full bg-slate-700 rounded-md px-3 py-2 text-xs"><input id="event-end" type="datetime-local" class="w-full bg-slate-700 rounded-md px-3 py-2 text-xs"></div><textarea id="event-desc" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Description (optional)"></textarea><div id="event-actions" class="pt-2 border-t border-slate-700/60 mt-2"><div class="grid grid-cols-3 gap-1"><button id="google-cal-btn" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-1 px-1 rounded-md text-[10px] transition">Google</button><button id="outlook-cal-btn" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-semibold py-1 px-1 rounded-md text-[10px] transition">Outlook</button><button id="download-ics-btn" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-semibold py-1 px-1 rounded-md text-[10px] transition">Apple/.ics</button></div><p class="text-[10px] text-slate-500 pt-1 text-center">Choose your calendar to add this event.</p></div></div>` },
+              { id:'coupon', label:'🏷️ Coupon', inputs:`<div class="space-y-2"><input id="coupon-code" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Coupon code (e.g., SAVE15)"><input id="coupon-url" type="url" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="(Optional) Landing page URL"><div id="coupon-preview-wrapper" class="text-xs text-slate-400 hidden">URL Preview: <span id="coupon-preview-url" class="text-slate-300 break-all"></span></div></div>` },
+              // --- MODIFIED UTM TAB ---
+              { id:'utm',    label:'📈 Website + UTM', inputs:`<div class="space-y-2"><input id="utm-base" type="url" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="https://example.com/page"><div class="grid grid-cols-2 gap-2"><input id="utm-source" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="utm_source" value="productpic"><input id="utm-medium" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="utm_medium" value="qr"></div><input id="utm-campaign" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="utm_campaign (e.g., spring_sale)"><div id="utm-preview-wrapper" class="text-xs text-slate-400 hidden">Final URL: <span id="utm-preview-url" class="text-slate-300 break-all"></span></div></div>` },
+              { id:'music',  label:'🎵 Music', inputs:`<div class="space-y-2"><select id="music-platform" class="w-full bg-slate-700 rounded-md px-3 py-2"><option>Spotify</option><option>Apple Music</option><option>SoundCloud</option></select><input id="music-url" type="url" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Track/Playlist/Podcast URL"></div>` },
+              { id:'app',    label:'📱 App Store', inputs:`<div class="space-y-2"><p class="text-[11px] text-slate-400">For auto-detection, use a 3rd party smart link service (e.g., onelink.to) in the URL/Text tab.</p><input id="app-url-ios" type="url" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Apple App Store URL"><input id="app-url-android" type="url" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Google Play Store URL"></div>` },
+              { id:'message',label:'📄 Plain Text', inputs:`<div class="relative"><textarea id="message-text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Message to display"></textarea><span id="word-counter" class="absolute bottom-2 right-2 text-[10px] text-slate-500">0 words</span></div>` }
+              ,{ id:'payment', label:'💰 Payment', inputs:`<div class="space-y-2"><select id="payment-type" class="w-full bg-slate-700 rounded-md px-3 py-2"><option value="paypal">PayPal.me</option><option value="cashapp">Cash App</option><option value="venmo">Venmo</option><option value="btc">Bitcoin</option><option value="eth">Ethereum</option></select><input id="payment-id" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Username or address"><input id="payment-amount" type="text" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Amount (optional)"></div>` }
+              ,{ id:'file', label:'📄 File', inputs:`<div class="space-y-2"><input id="file-input" type="file" class="w-full bg-slate-700 rounded-md px-3 py-2" accept=".pdf,.jpg,.jpeg,.png,.mp3"><p id="file-info" class="text-xs text-slate-400 hidden">File selected</p></div>` }
+              ,{ id:'batch', label:'📦 Batch', inputs:`<div class="space-y-2"><textarea id="batch-input" class="w-full bg-slate-700 rounded-md px-3 py-2" placeholder="Enter one value per line"></textarea><button id="batch-generate-btn" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-semibold py-2 px-2 rounded-md text-xs transition mt-1">Generate Batch</button></div>` }
+            ];
+
+            /* ------------ Marketing blurbs per tab ------------ */
+            const headlines = {
+              url:    {h:"Drive clicks instantly", s:"Send people to a page, menu, or landing page."},
+              wifi:   {h:"Frictionless Wi-Fi access", s:"Guests join fast—perfect for cafés & salons."},
+              maps:   {h:"Bring them straight to you", s:"Opens Google Maps to your location."},
+              phone:  {h:"Tap-to-call your business", s:"Great for cards, flyers, service stickers."},
+              sms:    {h:"Start a text conversation", s:"Pre-filled SMS message (support varies)."},
+              vcard:  {h:"Save your contact in one scan", s:"Add your details to their phone instantly."},
+              email:  {h:"Capture an email lead", s:"Create a 'mailto' link or send to a web form."},
+              social: {h:"Grow your followers", s:"Link to your profile or channel in one tap."},
+              event:  {h:"Add-to-calendar in seconds", s:"Workshops, classes, promos—done."},
+              coupon: {h:"Redeemable, trackable offers", s:"Send a code or promo landing page."},
+              utm:    {h:"Track scans in analytics", s:"UTM tags added automatically."},
+              music:  {h:"Play your music instantly", s:"Great for artists, playlists, podcasts."},
+              app:    {h:"Send to the right app store", s:"Link to App Store or Google Play pages."},
+              message:{h:"Show a quick message", s:"Display text immediately after scanning."}
+              ,payment:{h:"Send or receive money", s:"Generate PayPal, Cash App, Venmo, or crypto payment links."}
+              ,file:{h:"Share a document", s:"Link directly to a file (PDF, image, audio)."}
+              ,batch:{h:"Generate multiple codes", s:"Paste a list of data and download a ZIP."}
+            };
+
+            /* ------------ App ------------ */
+            const tabsRoot = document.getElementById('tabs-root');
+
+            // Build tab rows
+            tabs.forEach((t,i) => {
+              const row = document.createElement('div');
+              row.className = 'tab-row';
+
+              const btn = document.createElement('button');
+              btn.id = `${t.id}-tab-btn`;
+              btn.dataset.panel = t.id;
+              btn.className = 'qr-tab-btn tabbtn bg-' + (i===0?'indigo-600 text-white':'slate-600 text-slate-300') + ' w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold rounded';
+              btn.textContent = t.label;
+
+              const panel = document.createElement('div');
+              panel.id = `${t.id}-panel`;
+              panel.className = 'input-panel' + (i===0?' open':'');
+              panel.innerHTML = t.inputs;
+
+              row.appendChild(btn);
+              row.appendChild(panel);
+              tabsRoot.appendChild(row);
+            });
+
+            const sel = {
+              previewArea: document.getElementById('preview-area'),
+              qrContainer: document.getElementById('qrcode-container'),
+              wrapper: document.getElementById('qrcode-frame-wrapper'),
+              frameText: document.getElementById('frame-text-element'),
+              marketingHeadline: document.getElementById('marketing-headline'),
+              marketingCopy: document.getElementById('marketing-copy'),
+              color: document.getElementById('qr-color-picker'),
+              style: document.getElementById('corner-style-select'),
+              logoUpload: document.getElementById('qr-logo-upload'),
+              logoPreviewImg: document.getElementById('logo-preview-img'),
+              logoPreviewContainer: document.getElementById('logo-preview-container'),
+              removeLogoBtn: document.getElementById('remove-logo-btn'),
+              logoSize: document.getElementById('logo-size'),
+              logoMargin: document.getElementById('logo-margin'),
+              logoShape: document.getElementById('logo-shape'),
+              frameBgColor: document.getElementById('frame-bg-color'),
+              frameBorderColor: document.getElementById('frame-border-color')
+            };
+
+            // NEW DOM Elements for Save/Load
+            const saveCodeBtn = document.getElementById('save-code-btn');
+            const savedDesignsBtn = document.getElementById('saved-designs-btn');
+            // Analytics button has been removed; set to null to prevent errors
+            const analyticsBtn = null;
+            const newSignOutBtn = document.getElementById('sign-out-btn');
+            
+            const saveDesignModal = document.getElementById('save-design-modal');
+            const saveDesignNameInput = document.getElementById('save-design-name');
+            const modalCancelSaveBtn = document.getElementById('modal-cancel-save-btn');
+            const modalSkipSaveBtn = document.getElementById('modal-skip-save-btn');
+            const modalSaveBtn = document.getElementById('modal-save-btn');
+            
+            const savedDesignsModal = document.getElementById('saved-designs-modal');
+            const closeSavedListBtn = document.getElementById('close-saved-list-btn');
+            const savedDesignsList = document.getElementById('saved-designs-list');
+
+            const toastEl = document.getElementById('toast');
+            const loaderOverlay = document.getElementById('loader-overlay');
+
+            // --- New DOM references for added functionality ---
+            const gradientStartInput = document.getElementById('gradient-start-color');
+            const gradientEndInput = document.getElementById('gradient-end-color');
+            const eyeShapeSelect = document.getElementById('eye-shape-select');
+            const eyeColorOuterInput = document.getElementById('eye-color-outer');
+            const eyeColorInnerInput = document.getElementById('eye-color-inner');
+            const paymentTypeSelect = document.getElementById('payment-type');
+            const paymentIdInput = document.getElementById('payment-id');
+            const paymentAmountInput = document.getElementById('payment-amount');
+            const fileInput = document.getElementById('file-input');
+            const fileInfo = document.getElementById('file-info');
+            const batchInput = document.getElementById('batch-input');
+            const batchGenerateBtn = document.getElementById('batch-generate-btn');
+            const pngScaleSelect = document.getElementById('png-scale-select');
+            const saveStateBtn = document.getElementById('save-state-btn');
+            const loadStateInput = document.getElementById('load-state-input');
+            const previewMockupBtn = document.getElementById('preview-mockup-btn');
+            const mockupModal = document.getElementById('mockup-modal');
+            const closeMockupModalBtn = document.getElementById('close-mockup-modal-btn');
+            const mockupImgCard = document.getElementById('mockup-img-card');
+            const mockupImgPoster = document.getElementById('mockup-img-poster');
+            const mockupImgPhone = document.getElementById('mockup-img-phone');
+            const saveBrandBtn = document.getElementById('save-brand-btn');
+            const brandSwatchesContainer = document.getElementById('brand-swatches');
+            const frameBgImageInput = document.getElementById('frame-bg-image-input');
+            
+            // App state
+            let activeTab = 'url';
+            let activeFrame = frameCollections.standard[0];
+            let logoDataUrl = null;
+            let currentQrSize = 220; // fixed default; shrinks only on ultra-small screens
+            let downloadCallback = null; // Stores the download function (PNG/SVG)
+
+            // Additional state for new features
+            let uploadedFileURL = '';
+            let frameBgImageDataUrl = '';
+            let brandKit = [];
+
+            const qr = new QRCodeStyling({
+              width: currentQrSize, height: currentQrSize, type: 'svg',
+              data: 'Welcome!',
+              errorCorrectionLevel: 'H',
+              image: '',
+              dotsOptions: { color: '#000000', type: 'square' },
+              backgroundOptions: { color: '#ffffff' },
+              cornersSquareOptions: { type: 'square' },
+              imageOptions: { hideBackgroundDots: true, imageSize: 0.22, margin: 4, crossOrigin: 'anonymous' },
+            });
+            qr.append(sel.qrContainer);
+
+            function computeQrSize(){
+              const avail = (sel.previewArea.clientWidth || 600) - 40;
+              let size = Math.floor(Math.min(avail, 560) * 0.62);
+              size = Math.min(220, Math.max(160, size));
+              return size;
+            }
+            function setQrSize(newSize){
+              if(newSize === currentQrSize) return;
+              currentQrSize = newSize;
+              qr.update({ width: currentQrSize, height: currentQrSize });
+              scaleFrameElements();
+            }
+            function onResize(){ setQrSize(computeQrSize()); }
+            new ResizeObserver(onResize).observe(sel.previewArea);
+
+            function scaleFrameElements(){
+              const ratio = currentQrSize / 220;
+              const px = Math.max(2, Math.round(4 * ratio));
+              sel.wrapper.style.borderWidth = px + 'px';
+              sel.frameText.style.fontSize = Math.max(14, Math.round(18 * ratio)) + 'px';
+            }
+
+            function updateMarketing(){
+              const d = headlines[activeTab] || {h:'Build a scannable moment', s:'Pick a use case to start.'};
+              sel.marketingHeadline.textContent = d.h;
+              sel.marketingCopy.textContent = d.s;
+              const w = sel.wrapper.getBoundingClientRect().width;
+              document.getElementById('marketing-blurb').style.maxWidth = Math.ceil(w) + 'px';
+            }
+
+            /* ------------ NEW HELPER FUNCTIONS (Save/Load/Toast) ------------ */
+            const SAVED_DESIGNS_KEY = 'productPicSavedDesigns';
+            
+            function showToast(msg){
+              toastEl.textContent = msg || 'Done';
+              toastEl.classList.remove('hidden');
+              setTimeout(() => toastEl.classList.add('hidden'), 2000);
+            }
+
+            function getInputsState() {
+                const inputs = {};
+                document.querySelectorAll('.input-panel input, .input-panel select, .input-panel textarea').forEach(el => {
+                    if (el.id) {
+                        inputs[el.id] = el.value;
+                    }
+                });
+                // Capture active social tab
+                const activeSocial = document.querySelector('#social-platforms-container button.active');
+                inputs['activeSocialPlatform'] = activeSocial ? activeSocial.dataset.platformId : null;
+                return inputs;
+            }
+
+            function setInputsState(inputs) {
+                if (!inputs) return;
+                Object.keys(inputs).forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.value = inputs[id];
+                    }
+                });
+                
+                // Restore active social tab
+                const activeSocialId = inputs['activeSocialPlatform'];
+                if (activeSocialId) {
+                    const socialBtn = document.querySelector(`#social-platforms-container button[data-platform-id="${activeSocialId}"]`);
+                    if (socialBtn) {
+                        socialBtn.click(); // Simulate click to open and activate
+                    }
+                }
+            }
+
+            function getCurrentQrConfig() {
+                return {
+                    version: 2,
+                    activeTab: activeTab,
+                    activeFrameId: activeFrame.id,
+                    logoDataUrl: logoDataUrl,
+                    qrColor: sel.color.value,
+                    cornerStyle: sel.style.value,
+                    logoSize: sel.logoSize.value,
+                    logoMargin: sel.logoMargin.value,
+                    logoShape: sel.logoShape.value,
+                    frameBgColor: sel.frameBgColor.value,
+                    frameBorderColor: sel.frameBorderColor.value,
+                    frameText: sel.frameText.textContent,
+                    gradientStart: gradientStartInput ? gradientStartInput.value : null,
+                    gradientEnd: gradientEndInput ? gradientEndInput.value : null,
+                    eyeShape: eyeShapeSelect ? eyeShapeSelect.value : 'square',
+                    eyeOuterColor: eyeColorOuterInput ? eyeColorOuterInput.value : null,
+                    eyeInnerColor: eyeColorInnerInput ? eyeColorInnerInput.value : null,
+                    uploadedFileURL: uploadedFileURL || '',
+                    frameBgImageData: frameBgImageDataUrl || '',
+                    inputs: getInputsState()
+                };
+            }
+
+            function loadQrConfig(config) {
+                if (!config) return;
+                
+                // Restore active tab
+                const tabBtn = document.getElementById(`${config.activeTab || 'url'}-tab-btn`);
+                if (tabBtn) tabBtn.click();
+                
+                // Restore inputs first
+                setInputsState(config.inputs);
+                
+                // Restore frame
+                const allFrames = [...frameCollections.standard, ...frameCollections.holiday];
+                const frame = allFrames.find(f => f.id === config.activeFrameId) || frameCollections.standard[0];
+                applyFrame(frame);
+
+                // Restore logo
+                logoDataUrl = config.logoDataUrl || null;
+                if (logoDataUrl) {
+                    sel.logoPreviewImg.src = logoDataUrl;
+                    sel.logoPreviewContainer.classList.remove('hidden');
+                    sel.logoPreviewContainer.classList.add('flex');
+                } else {
+                    sel.logoPreviewContainer.classList.add('hidden');
+                    sel.logoPreviewContainer.classList.remove('flex');
+                }
+
+                // Restore styles
+                sel.color.value = config.qrColor || '#000000';
+                sel.style.value = config.cornerStyle || 'square';
+                sel.logoSize.value = config.logoSize || '0.22';
+                sel.logoMargin.value = config.logoMargin || '4';
+                sel.logoShape.value = config.logoShape || 'square';
+                sel.frameBgColor.value = config.frameBgColor || '#1e293b';
+                sel.frameBorderColor.value = config.frameBorderColor || '#e2e8f0';
+                sel.frameText.textContent = config.frameText || '';
+
+                // Restore gradient and eye styling
+                if (typeof config.gradientStart !== 'undefined' && gradientStartInput) gradientStartInput.value = config.gradientStart || '#000000';
+                if (typeof config.gradientEnd !== 'undefined' && gradientEndInput) gradientEndInput.value = config.gradientEnd || '#6366f1';
+                if (typeof config.eyeShape !== 'undefined' && eyeShapeSelect) eyeShapeSelect.value = config.eyeShape || 'square';
+                if (typeof config.eyeOuterColor !== 'undefined' && eyeColorOuterInput) eyeColorOuterInput.value = config.eyeOuterColor || '#000000';
+                if (typeof config.eyeInnerColor !== 'undefined' && eyeColorInnerInput) eyeColorInnerInput.value = config.eyeInnerColor || '#000000';
+                // Restore uploaded file URL
+                if (config.uploadedFileURL) {
+                    uploadedFileURL = config.uploadedFileURL;
+                    if (fileInfo) {
+                        fileInfo.textContent = 'File loaded from previous session';
+                        fileInfo.classList.remove('hidden');
+                    }
+                }
+                // Restore frame background image
+                if (config.frameBgImageData) {
+                    frameBgImageDataUrl = config.frameBgImageData;
+                    sel.wrapper.style.backgroundImage = `url(${frameBgImageDataUrl})`;
+                    sel.wrapper.style.backgroundSize = 'cover';
+                    sel.wrapper.style.backgroundPosition = 'center';
+                } else {
+                    sel.wrapper.style.backgroundImage = 'none';
+                }
+                
+                // Apply custom colors
+                sel.wrapper.style.background = sel.frameBgColor.value;
+                sel.wrapper.style.borderColor = sel.frameBorderColor.value;
+                sel.frameText.style.color = sel.frameBorderColor.value;
+
+                // Trigger QR update
+                updateQR();
+                showToast("Design loaded!");
+            }
+            
+            function openSaveModal(onDownload) {
+                downloadCallback = onDownload; // Store the download function
+                
+                // Suggest a name based on the current tab
+                const suggestion = headlines[activeTab]?.h || 'My Design';
+                saveDesignNameInput.value = suggestion;
+                
+                // If no download function, hide the "Just Download" button
+                modalSkipSaveBtn.classList.toggle('hidden', !onDownload);
+                
+                // Adjust save button text
+                modalSaveBtn.textContent = onDownload ? 'Save & Download' : 'Save';
+                
+                saveDesignModal.classList.add('show');
+                saveDesignNameInput.focus();
+            }
+
+            function closeSaveModal() {
+                saveDesignModal.classList.remove('show');
+                downloadCallback = null;
+            }
+
+            async function saveCurrentDesign() {
+                const name = saveDesignNameInput.value.trim() || `Design - ${new Date().toLocaleTimeString()}`;
+                const config = getCurrentQrConfig();
+                // Determine user ID from Firebase; fall back to anonymous
+                const userId = auth.currentUser?.uid || 'anonymous';
+                // Build a unique ID for the design
+                const designId = Date.now().toString();
+                const designData = { id: designId, name, config, created: Date.now(), updated: Date.now() };
+
+                try {
+                    if (window.storage && window.storage.set) {
+                        // Save design into Netlify Blobs under a namespaced key
+                        const key = `qrDesign:${userId}:${designId}`;
+                        await window.storage.set(key, JSON.stringify(designData));
+                        // List all designs for this user
+                        const listResult = await window.storage.list(`qrDesign:${userId}:`);
+                        const keys = listResult && listResult.keys ? listResult.keys : [];
+                        // Fetch designs to determine ordering and enforce limit
+                        const records = await Promise.all(keys.map(k => window.storage.get(k)));
+                        let allDesigns = records
+                            .filter(r => r && r.value)
+                            .map(r => JSON.parse(r.value));
+                        // Sort by created descending
+                        allDesigns.sort((a, b) => (b.created || 0) - (a.created || 0));
+                        // If more than 10 designs, remove the extras
+                        if (allDesigns.length > 10) {
+                            const extras = allDesigns.slice(10);
+                            for (const d of extras) {
+                                const delKey = `qrDesign:${userId}:${d.id}`;
+                                await window.storage.delete(delKey);
+                            }
+                        }
+                    } else {
+                        // Fallback to localStorage if Netlify Blobs is unavailable
+                        let designs = [];
+                        try {
+                            designs = JSON.parse(localStorage.getItem(SAVED_DESIGNS_KEY)) || [];
+                        } catch (e) {
+                            designs = [];
+                        }
+                        designs.unshift({ name, config, id: designId, created: Date.now(), updated: Date.now() });
+                        if (designs.length > 10) designs = designs.slice(0, 10);
+                        localStorage.setItem(SAVED_DESIGNS_KEY, JSON.stringify(designs));
+                    }
+                    showToast('Design Saved!');
+                } catch (e) {
+                    console.error('Error saving design:', e);
+                    showToast('Failed to save design');
+                }
+            }
+            
+            async function renderSavedDesignsList() {
+                // Determine user ID
+                const userId = auth.currentUser?.uid || 'anonymous';
+                let designs = [];
+                try {
+                    if (window.storage && window.storage.list) {
+                        const listResult = await window.storage.list(`qrDesign:${userId}:`);
+                        const keys = listResult && listResult.keys ? listResult.keys : [];
+                        const records = await Promise.all(keys.map(k => window.storage.get(k)));
+                        designs = records
+                            .filter(r => r && r.value)
+                            .map(r => JSON.parse(r.value));
+                        designs.sort((a, b) => (b.created || 0) - (a.created || 0));
+                    } else {
+                        // Fallback to localStorage
+                        designs = JSON.parse(localStorage.getItem(SAVED_DESIGNS_KEY)) || [];
+                    }
+                } catch (e) {
+                    console.error('Error loading saved designs:', e);
+                    designs = [];
+                }
+                savedDesignsList.innerHTML = '';
+                if (designs.length === 0) {
+                    savedDesignsList.innerHTML = '<p class="text-slate-400 text-sm text-center">No saved designs found.</p>';
+                    return;
+                }
+                designs.forEach((item, index) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'w-full text-left bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-md text-sm transition flex justify-between items-center';
+                    btn.dataset.index = index;
+                    const text = document.createElement('span');
+                    text.textContent = item.name;
+                    btn.appendChild(text);
+                    
+                    const delBtn = document.createElement('span');
+                    delBtn.className = 'text-red-400 hover:text-red-300 font-bold px-2 py-1 text-xs';
+                    delBtn.textContent = 'Delete';
+                    delBtn.dataset.deleteIndex = index;
+                    btn.appendChild(delBtn);
+
+                    savedDesignsList.appendChild(btn);
+                });
+            }
+
+            /* ------------ Core Helper Functions (from index2) ------------ */
+            function parseLocalISO(dtStr){
+              if(!dtStr) return null;
+              const s = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dtStr) ? dtStr + ':00' : dtStr;
+              const d = new Date(s);
+              return isNaN(d.getTime()) ? null : d;
+            }
+            function toICSDateTime(dt, floating){
+              if(!dt) return '';
+              const pad = n => (n<10?'0':'')+n;
+              if (floating){
+                return dt.getFullYear()
+                  + pad(dt.getMonth()+1) + pad(dt.getDate())
+                  + 'T' + pad(dt.getHours()) + pad(dt.getMinutes()) + pad(dt.getSeconds());
+              } else {
+                return dt.getUTCFullYear()
+                  + pad(dt.getUTCMonth()+1) + pad(dt.getUTCDate())
+                  + 'T' + pad(dt.getUTCHours()) + pad(dt.getUTCMinutes()) + pad(dt.getUTCSeconds()) + 'Z';
+              }
+            }
+            const escVC = s => String(s||'').replace(/[,;\\]/g,'\\$&').replace(/\n/g,'\\n');
+
+            function getValue(){
+              const gv = id => (document.getElementById(id)?.value || '').trim();
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+              switch(activeTab){
+                case 'wifi': {
+                  const ssid = gv('wifi-ssid').replace(/([\\;,"'])/g, '\\$1');
+                  const pass = gv('wifi-password').replace(/([\\;,"'])/g, '\\$1');
+                  const security = gv('wifi-security');
+                  if (security === 'nopass') {
+                      return `WIFI:T:nopass;S:${ssid};;`;
+                  }
+                  return `WIFI:T:${security};S:${ssid};P:${pass};;`;
+                }
+                case 'maps': return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gv('maps-query'))}`;
+                case 'phone': return `tel:${gv('phone-number').replace(/[\s()-]/g, '')}`;
+                case 'vcard': {
+                  let v='BEGIN:VCARD\nVERSION:3.0\n';
+                  if(gv('vcard-name')) v+=`FN:${escVC(gv('vcard-name'))}\n`;
+                  if(gv('vcard-title')) v+=`TITLE:${escVC(gv('vcard-title'))}\n`;
+                  if(gv('vcard-org')) v+=`ORG:${escVC(gv('vcard-org'))}\n`;
+                  if(gv('vcard-phone')) v+=`TEL;TYPE=CELL:${gv('vcard-phone')}\n`;
+                  if(gv('vcard-email')) v+=`EMAIL:${gv('vcard-email')}\n`;
+                  if(gv('vcard-website')) v+=`URL:${gv('vcard-website')}\n`;
+                  if(gv('vcard-address')) v+=`ADR;TYPE=WORK:;;${escVC(gv('vcard-address'))}\n`;
+                  v+='END:VCARD'; return v;
+                }
+                case 'email': {
+                  const emailOrUrl = gv('email-address');
+                  if (emailOrUrl.startsWith('http://') || emailOrUrl.startsWith('https://')) {
+                      return emailOrUrl;
+                  }
+                  if (emailRegex.test(emailOrUrl)) {
+                    return `mailto:${emailOrUrl}`;
+                  }
+                  return emailOrUrl;
+                }
+                case 'social': {
+                  const container = document.getElementById('social-platforms-container');
+                  const activeButton = container.querySelector('button.active');
+                  if (!activeButton) return '';
+                  const platformItem = activeButton.closest('.social-platform-item');
+                  const input = platformItem.querySelector('input');
+                  const handle = input ? input.value.trim() : '';
+                  const baseUrl = activeButton.dataset.baseUrl || '';
+                  return baseUrl + handle;
+                }
+                case 'event': { // For Google Calendar link
+                  const startDate = parseLocalISO(gv('event-start'));
+                  const endDate = parseLocalISO(gv('event-end'));
+                  if (!startDate || !endDate) return ''; // Don't generate if dates are invalid
+                  const text = encodeURIComponent(gv('event-title'));
+                  const details = encodeURIComponent(gv('event-desc'));
+                  const location = encodeURIComponent(gv('event-location'));
+                  const start = toICSDateTime(startDate, false);
+                  const end = toICSDateTime(endDate, false);
+                  return `https://www.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&location=${location}`;
+                }
+                case 'coupon': {
+                  const code=gv('coupon-code'), url=gv('coupon-url');
+                  if(url){ const sep=url.includes('?')?'&':'?'; return url+sep+'coupon='+encodeURIComponent(code); }
+                  return `COUPON: ${code}`;
+                }
+                case 'utm': {
+                  const base=gv('utm-base'); if(!base) return '';
+                  try{
+                    const u=new URL(base);
+                    const s=gv('utm-source'), m=gv('utm-medium'), c=gv('utm-campaign');
+                    if(s) u.searchParams.set('utm_source',s);
+                    if(m) u.searchParams.set('utm_medium',m);
+                    if(c) u.searchParams.set('utm_campaign',c);
+                    return u.toString();
+                  }catch(e){ return base; }
+                }
+                case 'music': return gv('music-url');
+                case 'app': return gv('app-url-ios') || gv('app-url-android'); // Simple fallback
+                case 'message': return gv('message-text') || 'Hello!';
+                case 'payment': {
+                  const type = document.getElementById('payment-type')?.value;
+                  const id = document.getElementById('payment-id')?.value.trim();
+                  const amount = document.getElementById('payment-amount')?.value.trim();
+                  if (!id) return '';
+                  switch(type) {
+                    case 'paypal': return amount ? `https://paypal.me/${id}/${amount}` : `https://paypal.me/${id}`;
+                    case 'cashapp': return amount ? `https://cash.app/$${id}?amount=${amount}` : `https://cash.app/$${id}`;
+                    case 'venmo': return amount ? `https://venmo.com/${id}?amount=${amount}` : `https://venmo.com/${id}`;
+                    case 'btc': return amount ? `bitcoin:${id}?amount=${amount}` : `bitcoin:${id}`;
+                    case 'eth': return amount ? `ethereum:${id}?amount=${amount}` : `ethereum:${id}`;
+                    default: return '';
+                  }
+                }
+                case 'file': {
+                  return uploadedFileURL || '';
+                }
+                case 'batch': {
+                  // batch tab does not update single QR; return empty
+                  return '';
+                }
+                default: { // URL/Text
+                  let v=gv('qr-text');
+                  return v || 'Welcome!';
+                }
+              }
+            }
+
+            async function shapeLogo(dataUrl, shape){
+              if(!dataUrl) return '';
+              if(shape!=='circle') return dataUrl;
+              try {
+                  const img = await new Promise((res, rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=dataUrl; });
+                  const s=Math.max(img.width,img.height);
+                  const c=document.createElement('canvas'); c.width=s; c.height=s;
+                  const ctx=c.getContext('2d'); ctx.beginPath(); ctx.arc(s/2,s/2,s/2,0,Math.PI*2); ctx.clip();
+                  ctx.drawImage(img,(s-img.width)/2,(s-img.height)/2);
+                  return c.toDataURL('image/png');
+              } catch (e) {
+                  console.error("Error shaping logo:", e);
+                  return dataUrl; // return original if shaping fails
+              }
+            }
+
+            async function updateQR(){
+              const data = getValue();
+              let imgUrl = '';
+              try {
+                  imgUrl = await shapeLogo(logoDataUrl, document.getElementById('logo-shape').value);
+              } catch (e) {
+                  console.error("Logo shaping failed, continuing without logo", e);
+                  imgUrl = ''; // Ensure it's blank on failure
+              }
+              
+              // Determine base dot/corner shapes from corner style select
+              const cornerStyle = sel.style.value;
+              let dotsType = 'square';
+              let baseCornersType = 'square';
+              if (cornerStyle === 'dot') {
+                  dotsType = 'dots';
+                  baseCornersType = 'dot';
+              } else if (cornerStyle === 'rounded') {
+                  dotsType = 'rounded';
+                  baseCornersType = 'extra-rounded';
+              }
+
+              // Determine corner (eye) shape and colors from dedicated controls
+              const eyeShape = eyeShapeSelect ? eyeShapeSelect.value : 'square';
+              let cornersType = baseCornersType;
+              if (eyeShape === 'dot') {
+                  cornersType = 'dot';
+              } else if (eyeShape === 'rounded') {
+                  cornersType = 'extra-rounded';
+              }
+              const outerColor = eyeColorOuterInput ? eyeColorOuterInput.value : sel.color.value;
+              const innerColor = eyeColorInnerInput ? eyeColorInnerInput.value : sel.color.value;
+
+              // Determine dots color or gradient
+              let dotsOpts;
+              const gradStart = gradientStartInput ? gradientStartInput.value : null;
+              const gradEnd = gradientEndInput ? gradientEndInput.value : null;
+              if (gradStart && gradEnd && gradStart !== gradEnd) {
+                  dotsOpts = {
+                      type: dotsType,
+                      gradient: {
+                          type: 'linear',
+                          rotation: 0,
+                          colorStops: [
+                              { color: gradStart, offset: 0 },
+                              { color: gradEnd, offset: 1 }
+                          ]
+                      }
+                  };
+              } else {
+                  dotsOpts = { color: sel.color.value, type: dotsType };
+              }
+              // Update QR code with new options
+              qr.update({
+                data: data || '',
+                dotsOptions: dotsOpts,
+                cornersSquareOptions: { type: cornersType, color: outerColor },
+                cornersDotOptions: { color: innerColor },
+                image: imgUrl || '',
+                imageOptions: { hideBackgroundDots: true, imageSize: parseFloat(sel.logoSize.value), margin: parseInt(sel.logoMargin.value||'4',10), crossOrigin:'anonymous' }
+              });
+              updateMarketing();
+              updatePreviews();
+              onResize();
+            }
+
+            function buildExportSVG(){
+              const svgEl=sel.qrContainer.querySelector('svg');
+              if(!svgEl) throw new Error('QR SVG not found');
+              const content=svgEl.innerHTML;
+              const pad=26, quiet=22;
+              const size=currentQrSize;
+              const label=sel.frameText.textContent.trim();
+              const hasText = label && activeFrame.id!=='none' && !activeFrame.isLabel;
+              const textH = hasText ? Math.round(38 * (currentQrSize/220)) : 0;
+              const innerW=size+quiet*2, innerH=size+quiet*2;
+              const W=innerW+pad*2, H=innerH+pad*2+textH;
+              const fs=getComputedStyle(sel.wrapper);
+              let bg=fs.backgroundColor;
+              if (bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') {
+                bg = '#1e293b'; 
+              }
+              const bc=fs.borderColor, bw=parseInt(fs.borderWidth,10)||0;
+              const tc=getComputedStyle(sel.frameText).color||'#fff';
+              const safe = (label || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+              const radius = fs.borderRadius;
+              let out=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><defs><style>.font-lora{font-family:'Lora',serif}</style></defs>`;
+              out+=`<rect x="0" y="0" width="${W}" height="${H}" fill="${bg}" rx="${radius}"/>`;
+              if(bw>0 && bc && bc!=='transparent'){ 
+                  const innerRadius = parseFloat(radius) - bw / 2;
+                  out+=`<rect x="${bw/2}" y="${bw/2}" width="${W-bw}" height="${H-bw}" fill="none" stroke="${bc}" stroke-width="${bw}" rx="${innerRadius > 0 ? innerRadius : 0}"/>`; 
+              }
+              if(hasText){
+                const fsPx = Math.max(14, Math.round(18 * (currentQrSize/220)));
+                const textY = pad + textH / 2;
+                out+=`<text x="${W/2}" y="${textY}" dominant-baseline="middle" text-anchor="middle" fill="${tc}" font-size="${fsPx}" font-weight="bold">${safe}</text>`;
+              }
+              const x=pad, y=pad+textH;
+              out+=`<rect x="${x}" y="${y}" width="${innerW}" height="${innerH}" fill="#ffffff"/>`;
+              out+=`<g transform="translate(${x+quiet}, ${y+quiet})" shape-rendering="crispEdges">${content}</g></svg>`;
+              return {svg: out, width: W, height: H};
+            }
+            function downloadFile(blob, filename){
+              const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); URL.revokeObjectURL(a.href);
+            }
+            
+            function doDownloadSVG() {
+                loaderOverlay.classList.remove('hidden');
+                try{
+                  const {svg} = buildExportSVG();
+                  downloadFile(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}), 'ProductPic-QRCode.svg');
+                } finally {
+                  loaderOverlay.classList.add('hidden');
+                }
+            }
+            
+            function doDownloadPNG() {
+                loaderOverlay.classList.remove('hidden');
+                try {
+                  const {svg, width, height} = buildExportSVG();
+                  const img = new Image();
+                  const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml;charset=utf-8'}));
+                  
+                  img.onload = ()=>{
+                    // Determine output scale from dropdown (default to 3 if not found)
+                    const scaleSelectEl = document.getElementById('png-scale-select');
+                    const scale = scaleSelectEl ? parseInt(scaleSelectEl.value || '3', 10) : 3;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width * scale;
+                    canvas.height = height * scale;
+                    const ctx = canvas.getContext('2d');
+                    ctx.scale(scale, scale);
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    canvas.toBlob((blob) => {
+                      if (blob) downloadFile(blob, 'ProductPic-QRCode.png');
+                      URL.revokeObjectURL(url);
+                      loaderOverlay.classList.add('hidden');
+                    }, 'image/png');
+                  };
+                  img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    loaderOverlay.classList.add('hidden');
+                    showToast('Error creating PNG.');
+                  };
+                  img.src = url;
+                } catch(e) {
+                  console.error("PNG Export failed:", e);
+                  loaderOverlay.classList.add('hidden');
+                }
+            }
+
+
+            function parseSMSTO(v){
+              const m = /^SMSTO:([^:]*):?(.*)$/.exec(v);
+              if(!m) return null;
+              const num=(m[1]||'').trim(), body=(m[2]||'').trim();
+              const qp = body ? ('?body=' + encodeURIComponent(body)) : '';
+              return 'sms:'+num+qp;
+            }
+            
+            function openData(v){
+              if(!v) return;
+              if(/^SMSTO:/i.test(v)){ const sms=parseSMSTO(v); if(sms){ window.open(sms,'_blank'); return; } }
+              if(/^BEGIN:VCARD/i.test(v)){
+                const blob=new Blob([v],{type:'text/vcard'}); const url=URL.createObjectURL(blob);
+                const a=document.createElement('a'); a.href=url; a.download='contact.vcf'; a.click(); URL.revokeObjectURL(url); showToast('vCard downloaded'); return;
+              }
+              if(/^COUPON:/i.test(v)){ navigator.clipboard?.writeText(v.replace(/^COUPON:\s*/i,'')); showToast('Coupon copied'); return; }
+              if(/^(https?:\/\/|mailto:|tel:|sms:|geo:)/i.test(v)){ window.open(v,'_blank'); return; }
+              navigator.clipboard?.writeText(v); showToast('Copied');
+            }
+
+            function updatePreviews() {
+                const mapsQuery = document.getElementById('maps-query')?.value.trim();
+                const mapsWrapper = document.getElementById('maps-preview-wrapper');
+                if (mapsQuery && mapsWrapper) {
+                    document.getElementById('maps-preview-link').href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`;
+                    mapsWrapper.classList.remove('hidden');
+                } else if (mapsWrapper) {
+                    mapsWrapper.classList.add('hidden');
+                }
+
+                const smsMessage = document.getElementById('sms-message')?.value;
+                const smsPreviewWrapper = document.getElementById('sms-preview-wrapper');
+                if (smsMessage && smsPreviewWrapper) {
+                    document.getElementById('sms-preview').textContent = smsMessage;
+                    smsPreviewWrapper.classList.remove('hidden');
+                } else if (smsPreviewWrapper) {
+                    smsPreviewWrapper.classList.add('hidden');
+                }
+
+                try {
+                    const utmBase = document.getElementById('utm-base')?.value.trim();
+                    const utmPreviewWrapper = document.getElementById('utm-preview-wrapper');
+                    if (utmBase && utmPreviewWrapper) {
+                        const url = new URL(utmBase);
+                        const source = document.getElementById('utm-source').value.trim();
+                        const medium = document.getElementById('utm-medium').value.trim();
+                        const campaign = document.getElementById('utm-campaign').value.trim();
+                        if (source) url.searchParams.set('utm_source', source);
+                        if (medium) url.searchParams.set('utm_medium', medium);
+                        if (campaign) url.searchParams.set('utm_campaign', campaign);
+                        document.getElementById('utm-preview-url').textContent = url.toString();
+                        utmPreviewWrapper.classList.remove('hidden');
+                    } else if (utmPreviewWrapper) {
+                        utmPreviewWrapper.classList.add('hidden');
+                    }
+                } catch (e) {
+                    const utmPreviewWrapper = document.getElementById('utm-preview-wrapper');
+                    if(utmPreviewWrapper) utmPreviewWrapper.classList.add('hidden');
+                }
+
+                const couponUrl = document.getElementById('coupon-url')?.value.trim();
+                const couponCode = document.getElementById('coupon-code')?.value.trim();
+                const couponPreviewWrapper = document.getElementById('coupon-preview-wrapper');
+                if (couponUrl && couponCode && couponPreviewWrapper) {
+                    const sep = couponUrl.includes('?') ? '&' : '?';
+                    document.getElementById('coupon-preview-url').textContent = couponUrl + sep + 'coupon=' + encodeURIComponent(couponCode);
+                    couponPreviewWrapper.classList.remove('hidden');
+                } else if (couponPreviewWrapper) {
+                    couponPreviewWrapper.classList.add('hidden');
+                }
+            }
+
+            function isColorLight(hex) {
+                if (!hex) return false;
+                let r = 0, g = 0, b = 0;
+                if (hex.length == 4) { // #RGB
+                    r = parseInt(hex[1] + hex[1], 16);
+                    g = parseInt(hex[2] + hex[2], 16);
+                    b = parseInt(hex[3] + hex[3], 16);
+                } else if (hex.length == 7) { // #RRGGBB
+                    r = parseInt(hex[1] + hex[2], 16);
+                    g = parseInt(hex[3] + hex[4], 16);
+                    b = parseInt(hex[5] + hex[6], 16);
+                }
+                const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+                return luminance > 0.65; // Threshold for "too light"
+            }
+
+            let debounceTimer;
+            const debouncedUpdate = () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(updateQR, 150);
+            };
+
+            /* ------------ NEW HELPER FUNCTIONS & EVENT LISTENERS ------------ */
+
+            // Convert an SVG string into a PNG blob at the specified scale
+            async function svgToPngBlob(svgString, width, height, scale) {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    const url = URL.createObjectURL(new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' }));
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width * scale;
+                        canvas.height = height * scale;
+                        const ctx = canvas.getContext('2d');
+                        ctx.scale(scale, scale);
+                        ctx.drawImage(img, 0, 0, width, height);
+                        canvas.toBlob((blob) => {
+                            resolve(blob);
+                            URL.revokeObjectURL(url);
+                        }, 'image/png');
+                    };
+                    img.onerror = () => {
+                        URL.revokeObjectURL(url);
+                        resolve(null);
+                    };
+                    img.src = url;
+                });
+            }
+
+            // Handle file input for file tab
+            function handleFileUpload(e) {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    uploadedFileURL = ev.target.result;
+                    if (fileInfo) {
+                        fileInfo.textContent = `${file.name} loaded`;
+                        fileInfo.classList.remove('hidden');
+                    }
+                    updateQR();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Save current state into a JSON file
+            function downloadStateFile() {
+                const config = getCurrentQrConfig();
+                const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+                downloadFile(blob, 'ProductPic-State.json');
+            }
+
+            // Load a previously saved state file (.json)
+            function handleLoadStateFile(e) {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const cfg = JSON.parse(ev.target.result);
+                        loadQrConfig(cfg);
+                        showToast('State loaded');
+                    } catch (err) {
+                        console.error('Failed to load state:', err);
+                        showToast('Invalid state file');
+                    }
+                };
+                reader.readAsText(file);
+            }
+
+            // Save current brand kit (logo + colors)
+            function saveBrand() {
+                const kit = {
+                    logo: logoDataUrl,
+                    primary: sel.color.value,
+                    frameBg: sel.frameBgColor.value,
+                    frameBorder: sel.frameBorderColor.value,
+                    gradientStart: gradientStartInput ? gradientStartInput.value : null,
+                    gradientEnd: gradientEndInput ? gradientEndInput.value : null
+                };
+                brandKit.push(kit);
+                localStorage.setItem('brandKit', JSON.stringify(brandKit));
+                renderBrandSwatches();
+                showToast('Brand saved');
+            }
+
+            // Render brand swatches from saved kit
+            function renderBrandSwatches() {
+                brandSwatchesContainer.innerHTML = '';
+                (brandKit || []).forEach((kit, idx) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'flex items-center gap-1 border border-slate-600 rounded p-1 text-xs';
+                    // Create color preview squares
+                    const col1 = document.createElement('span');
+                    col1.style.background = kit.primary;
+                    col1.className = 'w-3 h-3 rounded';
+                    const col2 = document.createElement('span');
+                    col2.style.background = kit.frameBg;
+                    col2.className = 'w-3 h-3 rounded';
+                    const col3 = document.createElement('span');
+                    col3.style.background = kit.frameBorder;
+                    col3.className = 'w-3 h-3 rounded';
+                    btn.appendChild(col1);
+                    btn.appendChild(col2);
+                    btn.appendChild(col3);
+                    btn.title = 'Apply saved brand';
+                    btn.addEventListener('click', () => {
+                        applyBrand(kit);
+                    });
+                    brandSwatchesContainer.appendChild(btn);
+                });
+            }
+
+            // Apply a brand kit to current design
+            function applyBrand(kit) {
+                if (!kit) return;
+                if (kit.logo) {
+                    logoDataUrl = kit.logo;
+                    sel.logoPreviewImg.src = kit.logo;
+                    sel.logoPreviewContainer.classList.remove('hidden');
+                    sel.logoPreviewContainer.classList.add('flex');
+                }
+                sel.color.value = kit.primary;
+                sel.frameBgColor.value = kit.frameBg;
+                sel.frameBorderColor.value = kit.frameBorder;
+                if (kit.gradientStart && gradientStartInput) gradientStartInput.value = kit.gradientStart;
+                if (kit.gradientEnd && gradientEndInput) gradientEndInput.value = kit.gradientEnd;
+                // Update UI
+                sel.wrapper.style.background = sel.frameBgColor.value;
+                sel.wrapper.style.borderColor = sel.frameBorderColor.value;
+                sel.frameText.style.color = sel.frameBorderColor.value;
+                updateQR();
+            }
+
+            // Handle frame background image upload
+            function handleFrameBgImageUpload(e) {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    frameBgImageDataUrl = ev.target.result;
+                    sel.wrapper.style.backgroundImage = `url(${frameBgImageDataUrl})`;
+                    sel.wrapper.style.backgroundSize = 'cover';
+                    sel.wrapper.style.backgroundPosition = 'center';
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Open mockup preview modal and render QR on mockup images
+            async function openMockupModal() {
+                const { svg, width, height } = buildExportSVG();
+                const scale = 2; // use low-res for mockup preview
+                const blob = await svgToPngBlob(svg, width, height, scale);
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    if (mockupImgCard) mockupImgCard.src = url;
+                    if (mockupImgPoster) mockupImgPoster.src = url;
+                    if (mockupImgPhone) mockupImgPhone.src = url;
+                }
+                mockupModal.classList.add('show');
+            }
+
+            function closeMockupModal() {
+                mockupModal.classList.remove('show');
+                // Revoke object URLs
+                if (mockupImgCard && mockupImgCard.src) URL.revokeObjectURL(mockupImgCard.src);
+                if (mockupImgPoster && mockupImgPoster.src) URL.revokeObjectURL(mockupImgPoster.src);
+                if (mockupImgPhone && mockupImgPhone.src) URL.revokeObjectURL(mockupImgPhone.src);
+            }
+
+            // Generate batch QR codes and save as zip
+            async function generateBatch() {
+                const lines = (batchInput?.value || '').split('\n').map(l => l.trim()).filter(l => l);
+                if (!lines || lines.length === 0) {
+                    showToast('Please enter data for batch generation');
+                    return;
+                }
+                loaderOverlay.classList.remove('hidden');
+                const zip = new JSZip();
+                // Save current data and design settings
+                const originalData = getValue();
+                for (let i = 0; i < lines.length; i++) {
+                    const text = lines[i];
+                    // Update QR with each line
+                    qr.update({ data: text || '' });
+                    // Build SVG and convert to PNG
+                    const { svg, width, height } = buildExportSVG();
+                    const pngBlob = await svgToPngBlob(svg, width, height, 2);
+                    if (pngBlob) {
+                        zip.file(`qr-${i+1}.png`, pngBlob);
+                    }
+                }
+                // Restore original data
+                qr.update({ data: originalData });
+                updateQR();
+                const content = await zip.generateAsync({ type: 'blob' });
+                saveAs(content, 'batch-qrcodes.zip');
+                loaderOverlay.classList.add('hidden');
+                showToast('Batch generated');
+            }
+
+            // Load brand kit from localStorage if available
+            try {
+                const storedBrand = localStorage.getItem('brandKit');
+                if (storedBrand) {
+                    brandKit = JSON.parse(storedBrand);
+                }
+            } catch (err) {
+                brandKit = [];
+            }
+            // Render brand swatches
+            renderBrandSwatches();
+
+            // Attach event listeners for new controls
+            if (gradientStartInput) gradientStartInput.addEventListener('input', debouncedUpdate);
+            if (gradientEndInput) gradientEndInput.addEventListener('input', debouncedUpdate);
+            if (eyeShapeSelect) eyeShapeSelect.addEventListener('change', debouncedUpdate);
+            if (eyeColorOuterInput) eyeColorOuterInput.addEventListener('input', debouncedUpdate);
+            if (eyeColorInnerInput) eyeColorInnerInput.addEventListener('input', debouncedUpdate);
+            if (paymentTypeSelect) paymentTypeSelect.addEventListener('change', debouncedUpdate);
+            if (paymentIdInput) paymentIdInput.addEventListener('input', debouncedUpdate);
+            if (paymentAmountInput) paymentAmountInput.addEventListener('input', debouncedUpdate);
+            if (fileInput) fileInput.addEventListener('change', handleFileUpload);
+            if (batchGenerateBtn) batchGenerateBtn.addEventListener('click', generateBatch);
+            if (pngScaleSelect) pngScaleSelect.addEventListener('change', () => {});
+            if (saveStateBtn) saveStateBtn.addEventListener('click', downloadStateFile);
+            if (loadStateInput) loadStateInput.addEventListener('change', handleLoadStateFile);
+            if (previewMockupBtn) previewMockupBtn.addEventListener('click', openMockupModal);
+            if (closeMockupModalBtn) closeMockupModalBtn.addEventListener('click', closeMockupModal);
+            if (saveBrandBtn) saveBrandBtn.addEventListener('click', saveBrand);
+            if (frameBgImageInput) frameBgImageInput.addEventListener('change', handleFrameBgImageUpload);
+
+            /* ------------ EVENT LISTENERS (Original) ------------ */
+            // Tabs
+            tabs.forEach((t,i)=>{
+              const btn = document.getElementById(`${t.id}-tab-btn`);
+              btn.addEventListener('click', ()=>{
+                  const panel = document.getElementById(`${t.id}-panel`);
+                  const isCurrentlyOpen = panel.classList.contains('open');
+                  tabs.forEach(otherTab => {
+                      document.getElementById(`${otherTab.id}-panel`).classList.remove('open');
+                      const otherBtn = document.getElementById(`${otherTab.id}-tab-btn`);
+                      otherBtn.classList.remove('bg-indigo-600', 'text-white');
+                      otherBtn.classList.add('bg-slate-600', 'text-slate-300');
+                  });
+                  if (!isCurrentlyOpen) {
+                      panel.classList.add('open');
+                      btn.classList.add('bg-indigo-600', 'text-white');
+                      btn.classList.remove('bg-slate-600', 'text-slate-300');
+                      activeTab = t.id;
+                  } else {
+                      activeTab = null;
+                  }
+                  updateMarketing();
+                  updateQR();
+              });
+            });
+
+            // Inputs
+            document.getElementById('qr-maker-screen').addEventListener('input', (e) => {
+                // Debounce only for text-like inputs
+                if (e.target.type === 'text' || e.target.type === 'url' || e.target.type === 'tel' || e.target.type === 'email' || e.target.type === 'password' || e.target.tagName === 'TEXTAREA') {
+                    debouncedUpdate();
+                } else {
+                    updateQR(); // Update immediately for colors, selects, etc.
+                }
+            });
+
+            // Auto-add http for URL tab
+            document.getElementById('qr-text')?.addEventListener('blur', (e)=>{
+              let v=e.target.value.trim();
+              if(activeTab==='url' && v && !/^(https?:\/\/|mailto:|tel:|sms:|geo:|WIFI:|BEGIN:|SMSTO:|COUPON:)/i.test(v) && v.includes('.')){ 
+                  e.target.value='https://'+v; 
+                  updateQR(); 
+              }
+            });
+            
+            document.getElementById('message-text')?.addEventListener('input', (e) => {
+              const words = e.target.value.trim().split(/\s+/).filter(Boolean).length;
+              document.getElementById('word-counter').textContent = `${words} word${words !== 1 ? 's' : ''}`;
+            });
+
+            // Social platform logic
+            const socialPlatforms = [
+                { name: 'Facebook', id: 'facebook', baseUrl: 'https://facebook.com/', placeholder: 'johnsonwebsite', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1877F2" class="w-5 h-5"><path d="M24 12.073c0-6.627-5.373-12-12-12S0 5.446 0 12.073c0 5.99 4.388 10.958 10.125 11.854v-8.385H7.078V12.07h3.047V9.412c0-3.007 1.792-4.669 4.532-4.669 1.312 0 2.686.235 2.686.235v2.953h-1.513c-1.491 0-1.953.925-1.953 1.874v2.265h3.328l-.532 3.472h-2.796v8.385C19.612 23.031 24 18.063 24 12.073z"/></svg>' },
+                { name: 'Instagram', id: 'instagram', baseUrl: 'https://instagram.com/', placeholder: 'nasa', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E4405F" class="w-5 h-5"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 1.268.058 2.15.242 2.91.549a4.858 4.858 0 012.12 1.453c.67.672 1.13 1.325 1.453 2.12.307.76.49 1.642.55 2.91.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.06 1.268-.242 2.15-.55 2.91a4.858 4.858 0 01-1.453 2.12c-.672.67-1.325 1.13-2.12 1.453-.76.307-1.642.49-2.91.55-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.268-.06-2.15-.242-2.91-.55a4.858 4.858 0 01-2.12-1.453c-.67-.672-1.13-1.325-1.453-2.12-.307-.76-.49-1.642-.55-2.91-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.06-1.268.242 2.15.55-2.91a4.858 4.858 0 011.453-2.12c.672-.67 1.325 1.13 2.12-1.453.76-.307 1.642-.49 2.91-.55C8.416 2.175 8.796 2.163 12 2.163zm0 1.802c-3.26 0-3.66.014-4.942.072-1.27.058-2.028.245-2.62.476a2.89 2.89 0 00-1.645 1.05c-.504.504-.798 1-1.05 1.644-.23.592-.417 1.35-.475 2.62C2.82 10.34 2.808 10.74 2.808 14s.012 3.66.072 4.942c.058 1.27.245 2.028.475 2.62a2.89 2.89 0 001.05 1.645c.504.504 1 .798 1.644 1.05.592.23 1.35.417 2.62.475 1.282.058 1.682.072 4.942.072s3.66-.014 4.942-.072c1.27-.058 2.028-.245 2.62-.475a2.89 2.89 0 001.645-1.05c.504.504.798-1 1.05-1.644.23-.592.417-1.35.475-2.62.058-1.282.072-1.682.072-4.942s-.014-3.66-.072-4.942c-.058-1.27-.245-2.028-.475-2.62a2.89 2.89 0 00-1.05-1.645c-.504-.504-1-.798-1.644-1.05-.592-.23-1.35-.417-2.62-.475C15.66 3.979 15.26 3.965 12 3.965zM12 9.188c-2.652 0-4.813 2.16-4.813 4.812s2.16 4.813 4.813 4.813 4.813-2.16 4.813-4.813-2.16-4.812-4.813-4.812zm0 7.817c-1.657 0-3-1.343-3-3s1.343-3 3-3 3 1.343 3 3-1.343 3-3 3zm6.406-7.907c-.777 0-1.406.63-1.406 1.406s.63 1.406 1.406 1.406 1.406-.63 1.406-1.406c0-.776-.63-1.406-1.406-1.406z"/></svg>' },
+                { name: 'Threads', id: 'threads', baseUrl: 'https://threads.net/@', placeholder: 'zuck', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-white"><path d="M14.56 18.35c-1.32 0-2.55-.3-3.63-.88-.43-.23-.81-.5-1.14-.83-.33-.3-.6-.62-.83-.98-.24-.37-.42-.78-.54-1.22-.12-.44-.18-.9-.18-1.37s.06-.93.18-1.37c.12-.44.3-.85.54-1.22.23-.36.5-.68.83-.98.33-.33.7-.6 1.14-.83 1.08-.58 2.3-.88 3.63-.88s2.55.3 3.63.88c.43.23.81.5 1.14.83.33.3.6.62.83.98.24.37.42.78.54-1.22.12-.44.18.9.18-1.37s-.06-.93-.18-1.37c-.12-.44-.3-.85-.54-1.22-.23-.36-.5-.68-.83-.98-.33-.33-.7-.6-1.14-.83-1.08-.58-2.3-.88-3.63-.88-2.3 0-4.4.63-6.18 1.88-1.3 2.1-1.3 4.7 0 6.8 1.78 1.25 3.88 1.88 6.18 1.88 1.32 0 2.55-.3 3.63-.88.43-.23.8-.5 1.14-.83.33-.3.6-.62.83-.98.24-.37.42-.78.54-1.22.12-.44.18-.9.18-1.37h-2.1c0 .86-.3 1.63-.88 2.2-.58.58-1.36.88-2.25.88z"/></svg>' },
+                { name: 'X / Twitter', id: 'x-twitter', baseUrl: 'https://x.com/', placeholder: 'lexkypolice', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#000000" class="w-5 h-5"><path d="M18.36 1.64h3.3l-7.3 8.44 8.65 12.28h-6.6l-5.32-7.4-6.13 7.4H1.64l7.9-9.08L1.25 1.64h6.75l4.75 6.75L18.36 1.64zm-2.58 18.44h2.9L8.52 3.52H5.44l10.34 16.56z"/></svg>' },
+                { name: 'TikTok', id: 'tiktok', baseUrl: 'https://tiktok.com/@', placeholder: 'tiktok', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#000000" class="w-5 h-5"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.65 4.31 1.73v3.72c-1.39-.14-2.75-.54-3.99-1.22-.08-.03-.17-.07-.25-.11-1.15.86-2.5 1.4-3.95 1.61v3.52c0 2.59-1.33 4.85-3.4 6.2-.31.2-.64.38-.98.54-1.46.68-3.08.99-4.73.91-.01 0-.01-.01-.02-.01-1.38-.08-2.73-.39-3.98-1.02-.3-.15-.59-.33-.87-.52-1.92-1.32-3.1-3.34-3.23-5.61.02-3.32 2.65-6.02 5.97-6.02 1.47 0 2.87.55 3.92 1.54V8.7c-2.02-.85-3.6-2.48-4.4-4.59.02-1.53.64-3.09 1.76-4.18C9.57.81 11.02.26 12.525.02z"/></svg>' },
+                { name: 'YouTube', id: 'youtube', baseUrl: 'https://youtube.com/', placeholder: 'channel/ID', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#FF0000" class="w-5 h-5"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>' },
+                { name: 'LinkedIn', id: 'linkedin', baseUrl: 'https://linkedin.com/in/', placeholder: 'randy-johnson', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#0A66C2" class="w-5 h-5"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>' },
+                { name: 'Pinterest', id: 'pinterest', baseUrl: 'https://pinterest.com/', placeholder: 'username', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E60023" class="w-5 h-5"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.103 3.344 9.42 7.938 11.137-.05-.487-.09-1.26-.013-1.84.08-.58.5-2.4.5-2.4s-.125-.25-.125-.625c0-.58.344-1.013.763-1.013.363 0 .537.275.537.6s-.35 1.113-.525 1.738c-.15.537.263.975.788.975 1.037 0 1.712-1.25 1.712-2.925 0-1.4-1.025-2.425-2.4-2.425-1.762 0-2.8 1.313-2.8 2.7 0 .325.1.675.25.875.05.075.063.137.038.25-.025.088-.175.7-.2.837-.037.15-.175.2-.337.113-1.263-.487-1.925-1.862-1.925-3.237 0-2.488 1.9-4.725 5.238-4.725 2.762 0 4.775 1.963 4.775 4.413 0 2.75-1.525 4.887-3.7 4.887-1.238 0-2.125-.975-1.838-2.138.25-.975.713-2 .95-2.862.113-.4.213-.813.213-1.225 0-.58-.3-1.075-.825-1.075-.688 0-1.238.713-1.238 1.588 0 .563.175 1.188.175 1.188s-1.138 4.787-1.338 5.675c-.325 1.45.225 3.325.325 3.65.113.375.463.5.7.35 1.2-.762 1.625-2.225 1.8-2.987.113-.5.625-2.35.625-2.35.35.662.988 1.2 1.75 1.2 2.275 0 3.863-2.437 3.863-5.225C21.35 7.9 17.513 4 13.05 4 8.225 4 5.2 7.025 5.2 9.975c0 1.25.563 2.537 1.225 3.237.063.063.1.15.125.237l-.2 1.05c-.013.05-.013.1-.038.15C6.025 16.3 5.4 17.85 5.4 19.5 5.4 22.013 7.913 24 10.425 24c1.2 0 2.288-.362 3.175-.962C15.138 23.6 16.5 22.9 17.7 21.85c2.3-2.025 3.788-4.975 3.788-8.225C21.488 6.463 17.213 2.2 12.013 2.2z"/></svg>' },
+                { name: 'WhatsApp', id: 'whatsapp', baseUrl: 'https://wa.me/', placeholder: '18593961313', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#25D366" class="w-5 h-5"><path d="M19.11 4.91C17.22 3.03 14.69 2 12 2 6.48 2 2 6.48 2 12s4.48 10 10 10c5.52 0 10-4.48 10-10 0-2.69-1.03-5.22-2.89-7.09zM12 20.25c-4.55 0-8.25-3.7-8.25-8.25S7.45 3.75 12 3.75s8.25 3.7 8.25 8.25-3.7 8.25-8.25 8.25zM16.4 13.7c-.12-.06-1.5-.74-1.73-.82s-.39-.12-.56.12c-.17.25-.65.82-.8 1-.14.17-.28.19-.52.06-.24-.12-1-.38-1.9-1.18-.7-.63-1.18-1.41-1.32-1.65-.14-.25-.01-.38.11-.5.11-.11.25-.28.37-.42s.17-.25.25-.42.04-.31-.02-.42c-.06-.12-.56-1.34-.76-1.84s-.4-.42-.56-.42h-.48c-.17 0-.44.06-.68.31s-.94.92-.94 2.25.97 2.61 1.1 2.78c.14.17 1.9 2.91 4.6 4.08 2.7 1.18 2.7.78 3.2.76s1.5-.61 1.71-1.2c.21-.58.21-1.07.14-1.18s-.25-.11-.37-.17z"/></svg>' },
+                { name: 'Snapchat', id: 'snapchat', baseUrl: 'https://snapchat.com/add/', placeholder: 'username', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#FFFC00" class="w-5 h-5"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm6.985 16.792c-.22 1.34-1.383 2.38-2.8 2.528-.472.05-1.02.063-1.603.063-1.42 0-2.87-.137-4.223-.42-.99-.208-1.93-.52-2.793-.91-.564-.257-.9-.76-1.008-1.368-.11-.607.18-1.2.66-1.57.48-.37.96-.5 1.58-.33.5.13.9.52 1.35.8.54.34 1.12.6 1.74.78.6.18 1.2.27 1.8.27.39 0 .78-.03 1.16-.1.6-.1 1.05-.53 1.1-1.14.03-.4-.17-.78-.5-1.02-.33-.24-.7-.4-1.1-.53-.4-.13-.82-.23-1.24-.32-1.28-.27-2.5-.77-3.52-1.62-.9-.75-1.4-1.8-1.4-2.92 0-1.28.6-2.45 1.62-3.25.9-.7 2.05-1.06 3.27-1.06.78 0 1.54.12 2.27.36.7.23 1.35.6 1.9 1.08.33.3.5.74.45 1.2-.05.47-.38.87-.83.98-.44.1-.9-.12-1.2-.42-.3-.3-.65-.54-1.02-.72-.37-.18-.76-.27-1.15-.27-.47 0-.92.1-1.34.3-.42.2-.7.54-.7.98 0 .42.27.82.67 1.05.4.23.83.4 1.28.52.45.12.9.25 1.33.4 1.28.43 2.4.92 3.3 1.8.9.88 1.4 2.1 1.4 3.35.02.43-.06.86-.22 1.27z"/></svg>' },
+                { name: 'Vimeo', id: 'vimeo', baseUrl: 'https://vimeo.com/', placeholder: 'username', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1AB7EA" class="w-5 h-5"><path d="M23.998 6.918c-.08 1.77-1.6 4.2-4.56 7.29-2.96 3.09-5.16 4.63-6.6 4.63-.92 0-1.8-.95-2.64-2.85s-1.28-3.79-1.32-3.8-1.2 2.1-2.16 5.1c-.84 2.62-1.68 3.94-2.52 3.94-.36 0-.8-.47-1.32-1.42-.52-.95-.78-1.8-.78-2.55 0-1.29.6-3.09 1.8-5.4s2.4-4.63 3.6-6.91c1.2-2.28 1.8-3.42 1.8-3.42s-1.84.52-3.64 1.58c-1.8 1.06-2.72 1.58-2.72 1.58s.92-2.58 2.76-5.16C6.078.688 7.038.018 7.638.018c.92 0 1.48 1.4 1.68 4.2.32 2.8 1.08 4.99 2.28 6.57 1.32 1.58 2.44 2.37 3.36 2.37.84 0 1.6-.74 2.28-2.22.68-1.48 1.02-3.23 1.02-5.26 0-.95-.12-1.6-.36-1.95-.24-.35-.64-.52-1.2-.52-.64 0-1.12.18-1.44.53-.32.35-.48.9-.48 1.63 0 .76.19 1.5.57 2.22.51.98.76 1.48.76 1.48s-2.12-1.11-4.24-3.33c-2.12-2.22-3.18-3.92-3.18-5.09 0-.69.24-1.21.72-1.58.48-.37 1.12-.55 1.92-.55.88 0 1.6.26 2.16.78.56.52.84 1.34.84 2.46 0 1.11-.4 2.48-1.2 4.12s-1.2 2.48-1.2 2.48.96.69 2.16 2.07c1.2 1.38 1.84 2.33 1.92 2.85.24 1.11.84 1.66 1.8 1.66.68 0 1.36-.4 2.04-1.19s1.14-1.93 1.38-3.42c.24-1.49.36-2.9.36-4.26 0-1.58-.32-2.81-.96-3.69-.64-.88-1.6-1.32-2.88-1.32-.8 0-1.44.18-1.92.53s-.72.8-.72 1.35c0 .35.12.72.36 1.11.24.39.36.72.36.99 0 .43-.2.78-.6.99-.4.21-.88.32-1.44.32-.84 0-1.6-.3-2.28-.9-.68-.6-1.02-1.42-1.02-2.48 0-1.11.4-2.04 1.2-2.79.8-.75 1.76-1.12 2.88-1.12.96 0 1.84.27 2.64.81.8.54 1.2 1.33 1.2 2.37z"/></svg>'}
+            ];
+            const socialContainer = document.getElementById('social-platforms-container');
+            if (socialContainer) {
+              socialPlatforms.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'social-platform-item';
+                item.innerHTML = `
+                  <button type="button" data-platform-id="${p.id}" data-base-url="${p.baseUrl}">
+                    ${p.svg}
+                    <span class="text-sm">${p.name}</span>
+                  </button>
+                  <div class="social-input-wrapper">
+                    <input type="text" id="social-handle-${p.id}" placeholder="${p.placeholder}" class="text-sm">
+                  </div>
+                `;
+                socialContainer.appendChild(item);
+              });
+
+              socialContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (!button) return;
+
+                const currentItem = button.closest('.social-platform-item');
+                const inputWrapper = currentItem.querySelector('.social-input-wrapper');
+                const wasActive = button.classList.contains('active');
+                
+                socialContainer.querySelectorAll('.social-platform-item').forEach(item => {
+                  item.querySelector('button').classList.remove('active');
+                  item.querySelector('.social-input-wrapper').classList.remove('open');
+                });
+
+                if (!wasActive) {
+                  button.classList.add('active');
+                  inputWrapper.classList.add('open');
+                  inputWrapper.querySelector('input').focus();
+                }
+                updateQR(); // Update QR on selection change
+              });
+            }
+
+
+            function getEventDetails() {
+                const gv = id => document.getElementById(id).value.trim();
+                const startDate = parseLocalISO(gv('event-start'));
+                const endDate = parseLocalISO(gv('event-end'));
+
+                if (!startDate || !endDate) {
+                  showToast("Please enter valid start and end dates.");
+                  return null;
+                }
+                return {
+                  start: startDate,
+                  end: endDate,
+                  title: gv('event-title'),
+                  desc: gv('event-desc'),
+                  loc: gv('event-location')
+                };
+            }
+            
+            document.getElementById('qr-maker-screen').addEventListener('click', (e) => {
+              const targetId = e.target.id;
+              if (targetId !== 'google-cal-btn' && targetId !== 'outlook-cal-btn' && targetId !== 'download-ics-btn') {
+                return;
+              }
+
+              const event = getEventDetails();
+              if (!event) return;
+
+              if (targetId === 'google-cal-btn') {
+                const url = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${toICSDateTime(event.start, false)}/${toICSDateTime(event.end, false)}&details=${encodeURIComponent(event.desc)}&location=${encodeURIComponent(event.loc)}`;
+                window.open(url, '_blank');
+              }
+              else if (targetId === 'outlook-cal-btn') {
+                const url = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&startdt=${event.start.toISOString()}&enddt=${event.end.toISOString()}&subject=${encodeURIComponent(event.title)}&location=${encodeURIComponent(event.loc)}&body=${encodeURIComponent(event.desc)}`;
+                window.open(url, '_blank');
+              }
+              else if (targetId === 'download-ics-btn') {
+                const content = [
+                    'BEGIN:VCALENDAR',
+                    'VERSION:2.0',
+                    'BEGIN:VEVENT',
+                    `URL:${document.location.href}`,
+                    `DTSTART:${toICSDateTime(event.start, true)}`,
+                    `DTEND:${toICSDateTime(event.end, true)}`,
+                    `SUMMARY:${escVC(event.title)}`,
+                    `DESCRIPTION:${escVC(event.desc)}`,
+                    `LOCATION:${escVC(event.loc)}`,
+                    'END:VEVENT',
+                    'END:VCALENDAR'
+                ].join('\n');
+                const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+                downloadFile(blob, 'event.ics');
+              }
+            });
+
+
+            // Wi-Fi security toggle
+            document.getElementById('wifi-security')?.addEventListener('change', (e) => {
+                const passwordInput = document.getElementById('wifi-password');
+                if (e.target.value === 'nopass') {
+                    passwordInput.style.display = 'none';
+                    passwordInput.value = '';
+                } else {
+                    passwordInput.style.display = 'block';
+                }
+                updateQR();
+            });
+
+            // Color/style
+            document.getElementById('qr-color-picker').addEventListener('input', (e) => {
+                const warning = document.getElementById('color-warning');
+                if (isColorLight(e.target.value)) {
+                    warning.classList.remove('hidden');
+                } else {
+                    warning.classList.add('hidden');
+                }
+                // No debounce, immediate update
+                updateQR();
+            });
+            document.getElementById('corner-style-select').addEventListener('input', updateQR);
+
+            // Logo handling
+            sel.logoUpload.addEventListener('change',(e)=>{
+              if(e.target.files && e.target.files[0]){
+                const r=new FileReader();
+                r.onload=(ev)=>{ logoDataUrl=ev.target.result; sel.logoPreviewImg.src=logoDataUrl; sel.logoPreviewContainer.classList.remove('hidden'); sel.logoPreviewContainer.classList.add('flex'); updateQR(); };
+                r.readAsDataURL(e.target.files[0]);
+              }
+            });
+            sel.removeLogoBtn.addEventListener('click',()=>{ logoDataUrl=null; sel.logoPreviewContainer.classList.add('hidden'); sel.logoPreviewContainer.classList.remove('flex'); sel.logoUpload.value = null; updateQR(); });
+            document.getElementById('logo-size').addEventListener('input', updateQR);
+            document.getElementById('logo-margin').addEventListener('input', updateQR);
+            document.getElementById('logo-shape').addEventListener('input', updateQR);
+
+            // Frame quick
+            document.querySelectorAll('.frame-quick').forEach(btn=>btn.addEventListener('click',()=>{
+              const id=btn.dataset.frame;
+              const all=[...frameCollections.standard, ...frameCollections.holiday];
+              const f=all.find(x=>x.id===id); if(f) applyFrame(f);
+            }));
+
+            // Frame Color Pickers
+            sel.frameBgColor.addEventListener('input', (e) => {
+              sel.wrapper.style.background = e.target.value;
+            });
+            sel.frameBorderColor.addEventListener('input', (e) => {
+              sel.wrapper.style.borderColor = e.target.value;
+              sel.frameText.style.color = e.target.value;
+            });
+
+            // Frame modal
+            const modal=document.getElementById('frame-modal');
+            const stdBtn = document.getElementById('standard-frames-btn');
+            const holBtn = document.getElementById('holiday-frames-btn');
+            
+            function switchFrameCategory(cat){
+              const cont=document.getElementById('frame-options-container'); cont.innerHTML='';
+              (frameCollections[cat]||[]).forEach(f=>{
+                const b=document.createElement('button');
+                b.className='bg-slate-700 hover:bg-slate-600 rounded-md p-2 text-center text-xs h-16 flex flex-col items-center justify-center';
+                b.innerHTML=`<span class="text-2xl">${f.style.icon||'✓'}</span><span class="mt-1">${f.text}</span>`;
+                b.addEventListener('click',()=>{ applyFrame(f); modal.classList.remove('show'); });
+                cont.appendChild(b);
+              });
+            }
+            document.getElementById('open-frame-modal-btn').addEventListener('click',()=>{ modal.classList.add('show'); });
+            document.getElementById('close-frame-modal-btn').addEventListener('click',()=>{ modal.classList.remove('show'); });
+            
+            stdBtn.addEventListener('click', () => {
+                switchFrameCategory('standard');
+                stdBtn.classList.add('text-white', 'border-indigo-500');
+                stdBtn.classList.remove('text-slate-400', 'border-transparent');
+                holBtn.classList.add('text-slate-400', 'border-transparent');
+                holBtn.classList.remove('text-white', 'border-indigo-500');
+            });
+
+            holBtn.addEventListener('click', () => {
+                switchFrameCategory('holiday');
+                holBtn.classList.add('text-white', 'border-indigo-500');
+                holBtn.classList.remove('text-slate-400', 'border-transparent');
+                stdBtn.classList.add('text-slate-400', 'border-transparent');
+                stdBtn.classList.remove('text-white', 'border-indigo-500');
+            });
+
+            // Label edit toggle
+            document.getElementById('toggle-edit-text-btn').addEventListener('click',()=>{
+              const on = sel.frameText.isContentEditable;
+              sel.frameText.contentEditable = (!on).toString();
+              document.getElementById('toggle-edit-text-btn').textContent = on ? 'Edit Label' : 'Done Editing';
+              if(!on){ 
+                sel.frameText.focus();
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(sel.frameText);
+                selection.removeAllRanges();
+                selection.addRange(range);
+              }
+            });
+
+            // Apply a frame
+            function applyFrame(frame){
+              activeFrame=frame;
+              const s = frame.style || {};
+              sel.wrapper.style.borderColor = s.gradient ? 'transparent' : (s.borderColor || 'transparent');
+              sel.wrapper.style.background = s.gradient ? s.gradient : (s.backgroundColor || 'transparent');
+              sel.frameText.textContent = frame.isLabel ? '' : (frame.text || '');
+              sel.frameText.style.color = s.textColor || 'transparent';
+              sel.frameText.classList.remove('font-lora');
+              if(s.fontFamily==='font-lora') sel.frameText.classList.add('font-lora');
+
+              sel.frameBgColor.value = s.backgroundColor ? s.backgroundColor.toLowerCase() : '#1e293b';
+              sel.frameBorderColor.value = s.textColor ? s.textColor.toLowerCase() : '#e2e8f0';
+              
+              scaleFrameElements();
+              updateMarketing();
+            }
+
+            /* ------------ EVENT LISTENERS (NEW) ------------ */
+            
+            // --- Sign Out (new button) ---
+            newSignOutBtn.addEventListener('click', async () => {
+                try {
+                    await signOut(auth);
+                    console.log('User signed out');
+                    // Remove stored userId on sign out so subsequent pages don't load stale data
+                    try {
+                        localStorage.removeItem('userId');
+                    } catch (err) {
+                        console.warn('Unable to remove userId from localStorage:', err);
+                    }
+                } catch (error) {
+                    console.error('Sign out error:', error.message);
+                    showToast("Error signing out.");
+                }
+            });
+            
+            // Analytics and Dynamic Links functionality removed per user request
+
+            // --- Download (now opens save modal) ---
+            document.getElementById('download-qr-png-btn').addEventListener('click', () => {
+                openSaveModal(doDownloadPNG);
+            });
+            document.getElementById('download-qr-svg-btn').addEventListener('click', () => {
+                openSaveModal(doDownloadSVG);
+            });
+
+            // --- Save Modal ---
+            saveCodeBtn.addEventListener('click', () => {
+                openSaveModal(null); // Open modal without a download callback
+            });
+            modalCancelSaveBtn.addEventListener('click', closeSaveModal);
+            
+            modalSkipSaveBtn.addEventListener('click', () => {
+                if (typeof downloadCallback === 'function') {
+                    downloadCallback();
+                }
+                closeSaveModal();
+            });
+            
+            modalSaveBtn.addEventListener('click', () => {
+                saveCurrentDesign();
+                if (typeof downloadCallback === 'function') {
+                    downloadCallback();
+                }
+                closeSaveModal();
+            });
+
+            // --- Load Modal ---
+            savedDesignsBtn.addEventListener('click', () => {
+                renderSavedDesignsList();
+                savedDesignsModal.classList.add('show');
+            });
+            
+            closeSavedListBtn.addEventListener('click', () => {
+                savedDesignsModal.classList.remove('show');
+            });
+
+            savedDesignsList.addEventListener('click', (e) => {
+                const deleteBtn = e.target.closest('[data-delete-index]');
+                const loadBtn = e.target.closest('[data-index]');
+                // Determine user ID
+                const userId = auth.currentUser?.uid || 'anonymous';
+                (async () => {
+                    let designs = [];
+                    try {
+                        if (window.storage && window.storage.list) {
+                            const listResult = await window.storage.list(`qrDesign:${userId}:`);
+                            const keys = listResult && listResult.keys ? listResult.keys : [];
+                            const records = await Promise.all(keys.map(k => window.storage.get(k)));
+                            designs = records.filter(r => r && r.value).map(r => JSON.parse(r.value));
+                            designs.sort((a, b) => (b.created || 0) - (a.created || 0));
+                        } else {
+                            designs = JSON.parse(localStorage.getItem(SAVED_DESIGNS_KEY)) || [];
+                        }
+                    } catch (err) {
+                        console.error('Error loading designs:', err);
+                        designs = [];
+                    }
+                    if (deleteBtn) {
+                        e.stopPropagation();
+                        const index = parseInt(deleteBtn.dataset.deleteIndex, 10);
+                        const design = designs[index];
+                        try {
+                            if (window.storage && window.storage.delete) {
+                                const delKey = `qrDesign:${userId}:${design.id}`;
+                                await window.storage.delete(delKey);
+                            } else {
+                                designs.splice(index, 1);
+                                localStorage.setItem(SAVED_DESIGNS_KEY, JSON.stringify(designs));
+                            }
+                            await renderSavedDesignsList();
+                            showToast('Design deleted.');
+                        } catch (err) {
+                            console.error('Error deleting design:', err);
+                            showToast('Failed to delete design');
+                        }
+                        return;
+                    }
+                    if (loadBtn) {
+                        const index = parseInt(loadBtn.dataset.index, 10);
+                        const design = designs[index];
+                        if (design && design.config) {
+                            loadQrConfig(design.config);
+                        }
+                        savedDesignsModal.classList.remove('show');
+                    }
+                })();
+            });
+
+
+            // Clickable preview to test the QR data
+            sel.wrapper.addEventListener('click', (e)=>{
+              if(sel.frameText && sel.frameText.isContentEditable) return;
+              openData(getValue());
+            });
+
+            // --- Sidebar Toggle ---
+            const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+            const sidebar = document.querySelector('aside');
+            if (sidebarToggleBtn && sidebar) {
+              sidebarToggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                sidebar.classList.toggle('open');
+                sidebarToggleBtn.classList.toggle('open');
+                document.body.classList.toggle('sidebar-open');
+              });
+            }
+            
+            // --- 3D Tilt Effect ---
+            const heroWrapper = document.getElementById('hero-wrapper');
+            if (heroWrapper) {
+              const qrFrame = document.getElementById('qrcode-frame-wrapper');
+              const marketingBlurb = document.getElementById('marketing-blurb');
+              
+              heroWrapper.addEventListener('mousemove', (e) => {
+                if (window.innerWidth < 1024) return; // Only on desktop
+                const { left, top, width, height } = heroWrapper.getBoundingClientRect();
+                const x = e.clientX - left;
+                const y = e.clientY - top;
+                const rotateX = ((y / height) - 0.5) * -15; 
+                const rotateY = ((x / width) - 0.5) * 15;   
+                const transformStyle = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(20px)`;
+                qrFrame.style.transform = transformStyle;
+                marketingBlurb.style.transform = transformStyle;
+              });
+              
+              heroWrapper.addEventListener('mouseleave', () => {
+                qrFrame.style.transform = 'rotateX(0deg) rotateY(0deg) translateZ(0px)';
+                marketingBlurb.style.transform = 'rotateX(0deg) rotateY(0deg) translateZ(0px)';
+              });
+            }
+            
+            // --- Final Init ---
+            switchFrameCategory('standard');
+            applyFrame(frameCollections.standard[0]);
+            updateMarketing();
+            updateQR();
+            setTimeout(onResize, 0);
+
+        } // --- End of initializeQrMaker() ---
+
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,16 @@
+{
+  "name": "ProductPic QR Maker",
+  "short_name": "ProductPic",
+  "description": "Design beautiful QR codes with advanced customization and export features.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "herologin.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
